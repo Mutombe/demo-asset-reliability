@@ -25,6 +25,7 @@ import {
   listSuppliers, createSupplier, updateSupplier, deleteSupplier,
   listPOs, createPO, receivePO, updatePO, deletePO, allMovements,
   addTask, updateTask, deleteTask, addDoc, deleteDoc, addValuation, updateValuation, deleteValuation,
+  listAllProjects, getMe, updateMe, listUsers, createUser, deleteUser,
   listContent, createContentApi, updateContentApi, deleteContentApi,
 } from '../api';
 
@@ -89,7 +90,7 @@ function AdminLogin({ onIn }) {
       />
       <Modal open onClose={() => nav('/')} maxW="max-w-md">
         <div className="p-7 sm:p-8">
-          <p className="kicker mb-3">Admin console</p>
+          <p className="kicker has-icon mb-3"><Icon name="dashboard" className="w-4 h-4" /> Admin console</p>
           <h1 className="display-3 text-steel-50">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
           <p className="text-steel-400 mt-2 text-sm">Manage projects, clients, inventory and site content.</p>
 
@@ -969,19 +970,135 @@ function ContentEditor({ data, onClose, onSave }) {
   );
 }
 
+/* ═══════════════ ALL PROJECTS ═══════════════ */
+function ProjectsView() {
+  const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [sel, setSel] = useState(null);
+  const load = useCallback(async () => { try { setRows(await listAllProjects()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const open = async (row) => { try { const c = await getClient(row.client_id); const fresh = (c.projects || []).find((p) => p.id === row.id); setSel({ project: fresh || row, clientId: row.client_id }); } catch (e) { toast.error(e.message); } };
+  const reloadSel = async () => { const c = await getClient(sel.clientId); return { projects: c.projects }; };
+  const shown = rows.filter((p) => `${p.title} ${p.client} ${p.type}`.toLowerCase().includes(q.toLowerCase()) && (filter === 'all' || p.status === filter));
+  if (sel) return <ProjectManage project={sel.project} onBack={() => { setSel(null); load(); }} reload={reloadSel} />;
+  if (!loaded) return <><div className="flex gap-3 mb-4"><Skeleton className="h-11 flex-1" /></div><SkeletonTable rows={6} /></>;
+  return (
+    <>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <label className="relative flex-1"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" className="w-4 h-4" /></span><input value={q} onChange={(e) => setQ(e.target.value)} className="input !pl-9 w-full" placeholder="Search projects or clients…" /></label>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">{[['all', 'All'], ...STATUSES.map((s) => [s, s])].map(([v, l]) => (<button key={v} onClick={() => setFilter(v)} className={`shrink-0 px-3 py-2 rounded-md font-mono text-[0.72rem] uppercase border transition-colors ${filter === v ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>{l}</button>))}</div>
+      </div>
+      <div className="panel overflow-hidden">
+        <div className="hidden md:grid grid-cols-[2fr_1.4fr_1.2fr_1fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Project</span><span>Client</span><span>Progress</span><span>Value</span><span></span></div>
+        {shown.map((p) => (
+          <button key={p.id} onClick={() => open(p)} className="w-full text-left grid grid-cols-[1fr_auto] md:grid-cols-[2fr_1.4fr_1.2fr_1fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850 transition-colors">
+            <div className="min-w-0"><StatusPill s={p.status} /><p className="text-sm text-steel-100 truncate mt-1">{p.title}</p><p className="text-xs text-steel-500 md:hidden">{p.client}</p></div>
+            <span className="text-sm text-steel-300 hidden md:block truncate">{p.client}</span>
+            <div className="hidden md:flex items-center gap-2"><div className="flex-1 h-1.5 rounded-full bg-steel-800 overflow-hidden max-w-[7rem]"><div className="h-full rounded-full" style={{ width: `${p.progress}%`, background: STATUS_HEX[p.status] }} /></div><span className="font-mono text-xs tabnum text-steel-400">{p.progress}%</span></div>
+            <span className="font-mono text-sm text-steel-100 hidden md:block">{money(p.budget)}</span>
+            <Icon name="chevronRight" className="w-4 h-4 text-steel-500 justify-self-end" />
+          </button>
+        ))}
+        {loaded && !shown.length && <p className="mono-label text-steel-500 py-12 text-center">No projects{q || filter !== 'all' ? ' match your filter' : ''}.</p>}
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════ USER MANAGEMENT ═══════════════ */
+function UsersView() {
+  const [users, setUsers] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const load = useCallback(async () => { try { setUsers(await listUsers()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const create = async () => {
+    if (!form.email || !form.password) { toast.error('Email and password required'); return; }
+    try { const u = await createUser(form.name, form.email, form.password); setUsers((x) => [...x, u]); setForm({ name: '', email: '', password: '' }); setAdding(false); toast.success('User invited'); }
+    catch (e) { toast.error(e.message); }
+  };
+  const del = async (u) => { const snap = users; setUsers((x) => x.filter((i) => i.id !== u.id)); try { await deleteUser(u.id); toast('User removed'); } catch (e) { setUsers(snap); toast.error(e.message); } };
+  if (!loaded) return <SkeletonTable rows={3} />;
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4"><p className="text-sm text-steel-400">{users.length} admin user{users.length !== 1 ? 's' : ''}</p><button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'Invite user'}</button></div>
+      {adding && (
+        <div className="panel p-5 mb-4 grid sm:grid-cols-4 gap-3 items-end">
+          <Field label="Full name"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+          <Field label="Email"><input className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@ars.co.zw" /></Field>
+          <Field label="Temp password"><input className="input" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="min 6 chars" /></Field>
+          <button onClick={create} className="btn btn-red">Create user</button>
+        </div>
+      )}
+      <div className="panel overflow-hidden">
+        {users.map((u) => (
+          <div key={u.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b border-steel-800 last:border-0">
+            <span className="grid place-items-center w-9 h-9 rounded-full bg-red-500 text-white text-[0.72rem] font-display shrink-0">{(u.name || u.email).split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>
+            <div className="flex-1 min-w-0"><p className="text-sm text-steel-100 truncate">{u.name} {u.self && <span className="mono-label text-red-400">· you</span>}</p><p className="mono-label text-steel-500 truncate">{u.email} · joined {u.created_at}</p></div>
+            {!u.self && <button onClick={() => del(u)} className="text-steel-500 hover:text-red-400"><Icon name="x" className="w-4 h-4" /></button>}
+          </div>
+        ))}
+      </div>
+      <p className="mono-label text-steel-500 mt-3">Invited users sign in at /admin with the email + password you set here.</p>
+    </>
+  );
+}
+
+/* ═══════════════ PROFILE ═══════════════ */
+function ProfileView({ onUpdate }) {
+  const [me, setMe] = useState(null);
+  const [name, setName] = useState('');
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { getMe().then((d) => { setMe(d); setName(d.name || ''); }).catch(() => {}); }, []);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body = {}; if (name && name !== me?.name) body.name = name; if (pw) body.password = pw;
+      if (!Object.keys(body).length) { toast('Nothing to update'); setBusy(false); return; }
+      const r = await updateMe(body); setToken(r.token); onUpdate?.(r.admin); setPw(''); setMe((m) => ({ ...m, name: r.admin.name })); toast.success('Profile updated');
+    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  if (!me) return <div className="max-w-lg"><SkeletonCards n={1} cols="grid-cols-1" /></div>;
+  return (
+    <div className="max-w-lg">
+      <div className="panel p-6">
+        <div className="flex items-center gap-4 mb-6">
+          <span className="grid place-items-center w-14 h-14 rounded-full bg-red-500 text-white text-lg font-display shrink-0">{(me.name || me.email).split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>
+          <div><h2 className="font-display text-xl text-steel-50">{me.name || 'Admin'}</h2><p className="text-sm text-steel-400">{me.email}</p></div>
+        </div>
+        <div className="space-y-4">
+          <Field label="Full name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label="Email"><input className="input opacity-60" value={me.email} disabled /></Field>
+          <Field label="New password"><input type="password" className="input" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Leave blank to keep current" /></Field>
+          <button onClick={save} disabled={busy} className="btn btn-red w-full !py-3 disabled:opacity-60">{busy ? 'Saving…' : 'Save profile'}</button>
+        </div>
+      </div>
+      <p className="mono-label text-steel-500 mt-3">Member since {me.created_at || '—'}.</p>
+    </div>
+  );
+}
+
 /* ═══════════════ CONSOLE ═══════════════ */
 const NAV_GROUPS = [
-  { title: 'Operations', items: [['dashboard', 'Dashboard', 'overview'], ['user', 'Clients', 'clients']] },
+  { title: 'Operations', items: [['dashboard', 'Dashboard', 'overview'], ['user', 'Clients', 'clients'], ['clipboardcheck', 'Projects', 'projects']] },
   { title: 'Commerce', items: [['box', 'Inventory', 'inventory'], ['file', 'Site content', 'site']] },
+  { title: 'Administration', items: [['shield', 'Users', 'users'], ['gear', 'Profile', 'profile']] },
 ];
 const TAB_META = {
   overview: ['Dashboard', 'Live projects, portfolio value and the work map'],
   clients: ['Clients', 'Portals, PINs and per-client project delivery'],
+  projects: ['Projects', 'Every project across all clients'],
   inventory: ['Inventory', 'Shop catalogue and warehouse stock control'],
   site: ['Site content', 'Articles, case studies and videos on the public site'],
+  users: ['Users', 'Admin accounts and access'],
+  profile: ['Profile', 'Your account and password'],
 };
 
-function Console({ admin, onOut }) {
+function Console({ admin, onOut, setAdmin }) {
   const [tab, setTab] = useState('overview');
   const [clients, setClients] = useState(cache.clients || []);
   const [pins, setPins] = useState(cache.pins || []);
@@ -1030,7 +1147,9 @@ function Console({ admin, onOut }) {
   const Sidebar = ({ mobile }) => (
     <div className="flex flex-col h-full w-full" style={{ background: '#14161b' }}>
       <div className="flex items-center h-16 px-4 shrink-0 border-b border-white/[0.06]">
-        <img src="/img/logo-light.png" alt="ARS" className={`w-auto ${collapsed && !mobile ? 'h-7 mx-auto' : 'h-8'}`} />
+        {collapsed && !mobile
+          ? <span className="grid place-items-center w-9 h-9 mx-auto rounded-lg bg-red-500 text-white font-display text-sm">A</span>
+          : <img src="/img/logo-light.png" alt="ARS" className="h-8 w-auto" />}
       </div>
       <nav className="flex-1 overflow-y-auto px-2.5 py-3">
         {NAV_GROUPS.map((g) => (
@@ -1116,6 +1235,12 @@ function Console({ admin, onOut }) {
             <InventoryModule />
           ) : tab === 'site' ? (
             <SiteManagement />
+          ) : tab === 'projects' ? (
+            <ProjectsView />
+          ) : tab === 'users' ? (
+            <UsersView />
+          ) : tab === 'profile' ? (
+            <ProfileView onUpdate={setAdmin} />
           ) : (
             <>
               <div className="flex justify-between items-center mb-4"><p className="text-sm text-steel-400">{clients.length} client{clients.length !== 1 ? 's' : ''}</p><button onClick={() => setCreating((v) => !v)} className="btn btn-red !py-2.5"><Icon name={creating ? 'x' : 'plus'} className="w-4 h-4" /> {creating ? 'Cancel' : 'New client'}</button></div>
@@ -1165,5 +1290,5 @@ export default function Admin() {
     el.style.fontSize = '16px';
     return () => { el.style.fontSize = prev; };
   }, []);
-  return admin ? <Console admin={admin} onOut={signOut} /> : <AdminLogin onIn={setAdmin} />;
+  return admin ? <Console admin={admin} onOut={signOut} setAdmin={setAdmin} /> : <AdminLogin onIn={setAdmin} />;
 }

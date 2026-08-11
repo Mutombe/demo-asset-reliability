@@ -23,7 +23,7 @@ export default function About() {
         <div className="relative shell grid lg:grid-cols-[1.15fr_1fr] gap-12 lg:gap-16 items-center">
           {/* text */}
           <div>
-            <Reveal><p className="kicker mb-5">Who we are</p></Reveal>
+            <Reveal><p className="kicker has-icon mb-5"><Icon name="handshake" className="w-4 h-4" /> Who we are</p></Reveal>
             <Reveal delay={0.05}>
               <h2 className="display-2 text-steel-50 text-balance">
                 Precision maintenance and reliability engineers, <span className="text-red">under one roof.</span>
@@ -102,7 +102,7 @@ export default function About() {
       <section className="section bg-steel">
         <div className="shell">
           <div className="max-w-2xl mb-12">
-            <Reveal><p className="kicker mb-5">What we stand for</p></Reveal>
+            <Reveal><p className="kicker has-icon mb-5"><Icon name="shield" className="w-4 h-4" /> What we stand for</p></Reveal>
             <Reveal delay={0.05}>
               <h2 className="display-2 text-steel-50">Predict. Prioritise. <span className="text-red">Prevent.</span></h2>
             </Reveal>
@@ -129,7 +129,7 @@ export default function About() {
         <div className="absolute inset-0 grid-fine opacity-30" aria-hidden />
         <div className="relative shell">
           <div className="max-w-2xl mb-12">
-            <Reveal><p className="kicker mb-5">Track record</p></Reveal>
+            <Reveal><p className="kicker has-icon mb-5"><Icon name="analytics" className="w-4 h-4" /> Track record</p></Reveal>
             <Reveal delay={0.05}>
               <h2 className="display-2 text-steel-50">Clients we have <span className="text-red">worked with.</span></h2>
             </Reveal>
@@ -157,7 +157,7 @@ export default function About() {
         <div className="shell">
           <div className="flex flex-wrap items-end justify-between gap-6 mb-10">
             <div className="max-w-xl">
-              <Reveal><p className="kicker mb-5">The toolkit</p></Reveal>
+              <Reveal><p className="kicker has-icon mb-5"><Icon name="wrench" className="w-4 h-4" /> The toolkit</p></Reveal>
               <Reveal delay={0.05}>
                 <h2 className="display-2 text-steel-50">Everything reliability, <span className="text-red">in one place.</span></h2>
               </Reveal>

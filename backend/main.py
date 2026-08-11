@@ -843,6 +843,80 @@ def admin_map(admin=Depends(require_admin)):
             out.append(d)
         return out
 
+@app.get("/api/admin/projects")
+def all_projects(admin=Depends(require_admin)):
+    """Flat list of every project across all clients."""
+    with Session(engine) as s:
+        cnames = {c.id: c.name for c in s.exec(select(Client)).all()}
+        out = []
+        for p in s.exec(select(Project)).all():
+            d = project_dict(s, p, deep=False)
+            d["client"] = cnames.get(p.client_id, "")
+            out.append(d)
+        return sorted(out, key=lambda x: x["id"], reverse=True)
+
+# ── profile (the signed-in admin) ──
+@app.get("/api/admin/me")
+def get_me(admin=Depends(require_admin)):
+    with Session(engine) as s:
+        u = s.exec(select(AdminUser).where(AdminUser.email == admin.get("sub"))).first()
+        if not u:
+            return {"name": admin.get("name", ""), "email": admin.get("sub", ""), "created_at": ""}
+        return {"id": u.id, "name": u.name, "email": u.email, "created_at": u.created_at}
+
+class MeBody(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+
+@app.patch("/api/admin/me")
+def update_me(body: MeBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        u = s.exec(select(AdminUser).where(AdminUser.email == admin.get("sub"))).first()
+        if not u:
+            raise HTTPException(404, "Account not found")
+        if body.name is not None:
+            u.name = body.name.strip() or u.name
+        if body.password:
+            if len(body.password) < 6:
+                raise HTTPException(400, "Password must be at least 6 characters")
+            u.password_hash = hash_pw(body.password)
+        s.add(u); s.commit(); s.refresh(u)
+        return {"token": make_token(u.email, u.name), "admin": {"name": u.name, "email": u.email}}
+
+# ── user management ──
+@app.get("/api/admin/users")
+def list_users(admin=Depends(require_admin)):
+    with Session(engine) as s:
+        me = admin.get("sub")
+        return [{"id": u.id, "name": u.name, "email": u.email, "created_at": u.created_at, "self": u.email == me}
+                for u in s.exec(select(AdminUser)).all()]
+
+@app.post("/api/admin/users")
+def admin_create_user(body: RegisterBody, admin=Depends(require_admin)):
+    email = body.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(400, "Enter a valid email address")
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    with Session(engine) as s:
+        if s.exec(select(AdminUser).where(AdminUser.email == email)).first():
+            raise HTTPException(400, "A user with that email already exists")
+        u = AdminUser(name=body.name.strip() or email.split("@")[0], email=email, password_hash=hash_pw(body.password))
+        s.add(u); s.commit(); s.refresh(u)
+        return {"id": u.id, "name": u.name, "email": u.email, "created_at": u.created_at, "self": False}
+
+@app.delete("/api/admin/users/{uid}")
+def del_user(uid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        u = s.get(AdminUser, uid)
+        if u and u.email == admin.get("sub"):
+            raise HTTPException(400, "You can't delete your own account")
+        if u:
+            if len(s.exec(select(AdminUser)).all()) <= 1:
+                raise HTTPException(400, "Can't delete the last admin account")
+            s.delete(u); s.commit()
+        return {"ok": True}
+
 def slugify(t):
     import re
     return re.sub(r"[^a-z0-9]+", "-", (t or "").lower()).strip("-")[:60]

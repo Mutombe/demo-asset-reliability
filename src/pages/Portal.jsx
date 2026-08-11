@@ -230,7 +230,7 @@ function SignIn({ onClient }) {
       />
       <Modal open onClose={() => nav('/')} maxW="max-w-md">
         <div className="p-7 sm:p-8">
-          <p className="kicker mb-3">Client portal</p>
+          <p className="kicker has-icon mb-3"><Icon name="lock" className="w-4 h-4" /> Client portal</p>
           <h1 className="display-3 text-steel-50">Access your projects</h1>
           <p className="text-steel-400 mt-2 text-sm">Enter the access code and 4-digit PIN from Asset Reliability Services.</p>
           <form onSubmit={submit} className="mt-6 space-y-3">

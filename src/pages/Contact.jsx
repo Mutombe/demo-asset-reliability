@@ -190,7 +190,7 @@ function OfficeMap() {
       <div className="relative shell">
         <div className="flex flex-wrap items-end justify-between gap-6 mb-9">
           <div className="max-w-xl">
-            <Reveal><p className="kicker mb-5">Find us</p></Reveal>
+            <Reveal><p className="kicker has-icon mb-5"><Icon name="pin" className="w-4 h-4" /> Find us</p></Reveal>
             <Reveal delay={0.05}><h2 className="display-2 text-steel-50">Our office in <span className="text-red">Belvedere.</span></h2></Reveal>
           </div>
           <Reveal delay={0.1}>
@@ -237,7 +237,7 @@ function Faq() {
     <section className="section bg-steel">
       <div className="shell">
         <div className="max-w-2xl mb-11">
-          <Reveal><p className="kicker mb-5">Before you ask</p></Reveal>
+          <Reveal><p className="kicker has-icon mb-5"><Icon name="clipboardcheck" className="w-4 h-4" /> Before you ask</p></Reveal>
           <Reveal delay={0.05}><h2 className="display-2 text-steel-50">Frequently asked <span className="text-red">questions.</span></h2></Reveal>
         </div>
         <div className="grid lg:grid-cols-2 gap-4">

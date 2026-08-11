@@ -112,7 +112,7 @@ function Footer() {
       <div className="relative border-b border-white/10">
         <div className="shell py-16 md:py-20 grid gap-10 lg:grid-cols-[1.5fr_1fr] lg:items-center">
           <div>
-            <p className="kicker mb-6" style={{ color: 'var(--color-red-400)' }}>Reliability, engineered</p>
+            <p className="kicker has-icon mb-6" style={{ color: 'var(--color-red-400)' }}><Icon name="shield" className="w-4 h-4" /> Reliability, engineered</p>
             <h3 className="display-2 text-white max-w-xl leading-[1.02]">Ready to design out <span className="text-red-400">failure?</span></h3>
             <p className="lead !text-white/60 mt-6 max-w-lg">Book a condition survey and get a clear, costed picture of your plant's health, from the team Zimbabwe's biggest names already trust.</p>
           </div>

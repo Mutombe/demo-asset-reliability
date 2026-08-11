@@ -41,6 +41,14 @@ export const stockMovement = (id, body) => req(`/api/admin/products/${id}/moveme
 export const productMovements = (id) => req(`/api/admin/products/${id}/movements`, { auth: true });
 export const deleteProductApi = (id) => req(`/api/admin/products/${id}`, { method: 'DELETE', auth: true });
 
+/* ── all projects · profile · users ── */
+export const listAllProjects = () => req('/api/admin/projects', { auth: true });
+export const getMe = () => req('/api/admin/me', { auth: true });
+export const updateMe = (b) => req('/api/admin/me', { method: 'PATCH', body: b, auth: true });
+export const listUsers = () => req('/api/admin/users', { auth: true });
+export const createUser = (name, email, password) => req('/api/admin/users', { method: 'POST', body: { name, email, password }, auth: true });
+export const deleteUser = (id) => req(`/api/admin/users/${id}`, { method: 'DELETE', auth: true });
+
 /* ── suppliers ── */
 export const listSuppliers = () => req('/api/admin/suppliers', { auth: true });
 export const createSupplier = (b) => req('/api/admin/suppliers', { method: 'POST', body: b, auth: true });

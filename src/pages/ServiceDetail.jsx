@@ -251,7 +251,7 @@ export default function ServiceDetail() {
             <div className="absolute inset-0 grid-blueprint opacity-60" aria-hidden />
             <div className="absolute inset-0 glow-red opacity-70" aria-hidden />
             <div className="relative max-w-2xl">
-              <p className="kicker mb-5" style={{ color: 'var(--color-red-400)' }}>Ready when you are</p>
+              <p className="kicker has-icon mb-5" style={{ color: 'var(--color-red-400)' }}><Icon name="clock" className="w-4 h-4" /> Ready when you are</p>
               <h2 className="display-2 text-white">Book a <span className="text-red">{s.name.replace(/\s*\(.*\)\s*/, '')}</span> survey.</h2>
               <p className="lead !text-white/80 mt-5">Tell us your site, assets and timeline. We’ll scope the work and get an analyst to you — with a prioritised report, not a raw spreadsheet.</p>
               <div className="flex flex-wrap gap-3 mt-8">

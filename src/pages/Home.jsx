@@ -68,7 +68,7 @@ function Hero() {
     const t = setInterval(() => setI((v) => (v + 1) % heroSlides.length), 5500);
     return () => clearInterval(t);
   }, []);
-  const Kicker = <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="kicker mb-5" style={{ color: 'var(--color-red-400)' }}>Condition monitoring · Precision maintenance · Harare</motion.p>;
+  const Kicker = <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="kicker has-icon mb-5" style={{ color: 'var(--color-red-400)' }}><Icon name="gauge" className="w-4 h-4" /> Condition monitoring · Precision maintenance · Harare</motion.p>;
   const Heading = <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.08 }} className="display-1 text-white text-balance max-w-4xl">All failures are <span className="text-red-500">preventable.</span></motion.h1>;
 
   return (

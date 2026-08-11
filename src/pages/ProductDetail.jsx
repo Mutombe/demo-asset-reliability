@@ -154,7 +154,7 @@ export default function ProductDetail() {
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 mt-16">
           <Reveal>
             <div>
-              <p className="kicker mb-4">Key features</p>
+              <p className="kicker has-icon mb-4"><Icon name="star" className="w-4 h-4" /> Key features</p>
               <ul className="grid sm:grid-cols-2 gap-3">
                 {p.features.map((f) => (
                   <li key={f} className="flex items-start gap-3 panel p-4">
@@ -168,7 +168,7 @@ export default function ProductDetail() {
 
           <Reveal delay={0.05}>
             <div>
-              <p className="kicker mb-4">Specifications</p>
+              <p className="kicker has-icon mb-4"><Icon name="clipboardcheck" className="w-4 h-4" /> Specifications</p>
               <div className="panel-bold overflow-hidden">
                 <table className="w-full text-sm">
                   <tbody>
@@ -190,7 +190,7 @@ export default function ProductDetail() {
           <div className="mt-20">
             <div className="flex items-end justify-between gap-4 mb-6">
               <div>
-                <p className="kicker mb-3">More from the shop</p>
+                <p className="kicker has-icon mb-3"><Icon name="cart" className="w-4 h-4" /> More from the shop</p>
                 <h2 className="font-display text-2xl sm:text-3xl text-steel-50">Related products</h2>
               </div>
               <Link to="/products" className="btn btn-outline-bold shrink-0 !hidden sm:!inline-flex">All products <Icon name="arrowRight" className="w-4 h-4" /></Link>
