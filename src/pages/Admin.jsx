@@ -5,7 +5,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../components/Icon';
 import WorkMap from '../components/WorkMap';
 import Modal from '../components/Modal';
+import { Skeleton, SkeletonStats, SkeletonTable, SkeletonCards, SkeletonMap, SkeletonList } from '../components/Skeleton';
 import { AuthBackdrop } from './Portal';
+
+/* in-memory cache so switching tabs shows the last data instantly (refetched in
+   the background) instead of flashing a skeleton every visit. */
+const cache = { clients: null, pins: null, products: null, content: null, detail: {} };
+
+/* list entrance: a soft staggered cascade */
+const listV = { show: { transition: { staggerChildren: 0.035 } } };
+const itemV = { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: { duration: 0.28 } } };
 import {
   API_BASE, getToken, setToken, adminLogin, adminRegister, adminGoogle, listClients, getClient, createClient,
   regenPin, deleteClient, createProject, updateProject, deleteProject, addWorklog, addMilestone,
@@ -253,7 +262,11 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
 
   return (
     <div>
-      <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400 mb-5"><Icon name="arrowLeft" className="w-4 h-4" /> All clients</button>
+      <nav className="flex items-center gap-1.5 text-sm mb-5">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> Clients</button>
+        <Icon name="chevronRight" className="w-3.5 h-3.5 text-steel-600" />
+        <span className="text-steel-100 truncate max-w-[50vw]">{client.name}</span>
+      </nav>
       {/* client header + portal access */}
       <div className="panel p-5 sm:p-6 mb-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -273,7 +286,7 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
       </div>
 
       {/* projects */}
-      <div className="flex items-center justify-between mb-3"><h3 className="font-display text-lg text-steel-50">Projects ({(client.projects || []).length})</h3><button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'New project'}</button></div>
+      <div className="flex items-center justify-between mb-3"><h3 className="font-display text-lg text-steel-50">Projects{client.projects ? ` (${client.projects.length})` : ''}</h3><button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'New project'}</button></div>
 
       {adding && (
         <div className="panel p-5 mb-4 grid sm:grid-cols-2 gap-3">
@@ -291,16 +304,26 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
       )}
 
       <div className="grid md:grid-cols-2 gap-4">
-        {(client.projects || []).map((p) => (
-          <button key={p.id} onClick={() => setProj(p)} className="panel lift p-5 text-left group">
-            <div className="flex items-center justify-between mb-2"><StatusPill s={p.status} /><span className="mono-label text-steel-500">{p.type}</span></div>
-            <h4 className="font-display text-steel-50 group-hover:text-red-400 transition-colors">{p.title}</h4>
-            <div className="flex items-center justify-between mt-3 mb-1.5"><span className="mono-label text-steel-500">{p.progress}%</span><span className="font-mono text-sm text-steel-100">{money(p.budget)}</span></div>
-            <div className="h-1.5 rounded-full bg-steel-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p.progress}%`, background: STATUS_HEX[p.status] }} /></div>
-            <p className="mono-label text-steel-500 mt-3">{(p.worklogs || []).length} updates · {(p.photos || []).length} photos · {(p.milestones || []).length} milestones</p>
-          </button>
-        ))}
-        {!(client.projects || []).length && !adding && <p className="mono-label text-steel-500 py-8">No projects yet. Add the first one.</p>}
+        {client.projects === undefined ? (
+          Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="panel p-5"><Skeleton className="h-4 w-24 mb-3" /><Skeleton className="h-5 w-2/3 mb-3.5" /><Skeleton className="h-1.5 w-full mb-3" /><Skeleton className="h-3 w-1/2" /></div>
+          ))
+        ) : (
+          <>
+            <AnimatePresence initial={false}>
+              {client.projects.map((p) => (
+                <motion.button key={p.id} layout variants={itemV} initial="hidden" animate="show" onClick={() => setProj(p)} className="panel lift p-5 text-left group">
+                  <div className="flex items-center justify-between mb-2"><StatusPill s={p.status} /><span className="mono-label text-steel-500">{p.type}</span></div>
+                  <h4 className="font-display text-steel-50 group-hover:text-red-400 transition-colors">{p.title}</h4>
+                  <div className="flex items-center justify-between mt-3 mb-1.5"><span className="mono-label text-steel-500">{p.progress}%</span><span className="font-mono text-sm text-steel-100">{money(p.budget)}</span></div>
+                  <div className="h-1.5 rounded-full bg-steel-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p.progress}%`, background: STATUS_HEX[p.status] }} /></div>
+                  <p className="mono-label text-steel-500 mt-3">{(p.worklogs || []).length} updates · {(p.photos || []).length} photos · {(p.milestones || []).length} milestones</p>
+                </motion.button>
+              ))}
+            </AnimatePresence>
+            {!client.projects.length && !adding && <p className="mono-label text-steel-500 py-8">No projects yet. Add the first one.</p>}
+          </>
+        )}
       </div>
     </div>
   );
@@ -324,10 +347,11 @@ function ProductManage({ product, onBack, reload }) {
   const [p, setP] = useState(product);
   const [saving, setSaving] = useState(false);
   const [moves, setMoves] = useState([]);
+  const [mLoaded, setMLoaded] = useState(false);
   const [mv, setMv] = useState({ kind: 'Receive', qty: '', reason: '', ref: '' });
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
 
-  useEffect(() => { productMovements(p.id).then(setMoves).catch(() => {}); }, [p.id]);
+  useEffect(() => { productMovements(p.id).then(setMoves).catch(() => {}).finally(() => setMLoaded(true)); }, [p.id]);
 
   const save = async () => {
     setSaving(true);
@@ -349,7 +373,11 @@ function ProductManage({ product, onBack, reload }) {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> Inventory</button>
+        <nav className="flex items-center gap-1.5 text-sm">
+          <button onClick={onBack} className="inline-flex items-center gap-1.5 text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> Inventory</button>
+          <Icon name="chevronRight" className="w-3.5 h-3.5 text-steel-600" />
+          <span className="text-steel-100 truncate max-w-[40vw]">{p.name || 'New product'}</span>
+        </nav>
         <div className="flex gap-2"><button onClick={remove} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button><button onClick={save} disabled={saving} className="btn btn-red !py-2.5">{saving ? 'Saving…' : 'Save changes'}</button></div>
       </div>
       <div className="flex items-center gap-4 mb-5">
@@ -396,15 +424,19 @@ function ProductManage({ product, onBack, reload }) {
           </div>
           <div className="mt-5 pt-4 border-t border-steel-800">
             <p className="mono-label text-steel-500 mb-3">Movement history</p>
-            <ol className="space-y-2.5 max-h-72 overflow-y-auto">
-              {moves.map((m) => (
-                <li key={m.id} className="flex items-center gap-3">
-                  <span className="grid place-items-center w-7 h-7 rounded shrink-0" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)', background: 'var(--color-steel-850)' }}><Icon name={m.qty >= 0 ? 'plus' : 'minus'} className="w-4 h-4" /></span>
-                  <div className="flex-1 min-w-0"><p className="text-sm text-steel-100">{m.kind} <span className="font-mono tabnum" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)' }}>{m.qty >= 0 ? '+' : ''}{m.qty}</span> <span className="text-steel-500">→ {m.balance}</span></p><p className="text-xs text-steel-500 truncate">{m.date}{m.reason ? ` · ${m.reason}` : ''}{m.ref ? ` · ${m.ref}` : ''}</p></div>
-                </li>
-              ))}
-              {!moves.length && <p className="mono-label text-steel-500">No movements yet.</p>}
-            </ol>
+            {!mLoaded ? <SkeletonList n={3} /> : (
+              <ol className="space-y-2.5 max-h-72 overflow-y-auto">
+                <AnimatePresence initial={false}>
+                  {moves.map((m) => (
+                    <motion.li key={m.id} layout initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
+                      <span className="grid place-items-center w-7 h-7 rounded shrink-0" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)', background: 'var(--color-steel-850)' }}><Icon name={m.qty >= 0 ? 'plus' : 'minus'} className="w-4 h-4" /></span>
+                      <div className="flex-1 min-w-0"><p className="text-sm text-steel-100">{m.kind} <span className="font-mono tabnum" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)' }}>{m.qty >= 0 ? '+' : ''}{m.qty}</span> <span className="text-steel-500">→ {m.balance}</span></p><p className="text-xs text-steel-500 truncate">{m.date}{m.reason ? ` · ${m.reason}` : ''}{m.ref ? ` · ${m.ref}` : ''}</p></div>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
+                {!moves.length && <p className="mono-label text-steel-500">No movements yet.</p>}
+              </ol>
+            )}
           </div>
         </div>
       </div>
@@ -413,15 +445,17 @@ function ProductManage({ product, onBack, reload }) {
 }
 
 function Inventory() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(cache.products || []);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_PRODUCT);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(!!cache.products);
   const [sel, setSel] = useState(null);
 
-  const load = useCallback(async () => { try { setItems(await listProducts()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  const load = useCallback(async () => {
+    try { const d = await listProducts(); cache.products = d; setItems(d); } catch (e) { toast.error(e.message); } finally { setLoaded(true); }
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   const shown = items.filter((p) =>
@@ -434,11 +468,24 @@ function Inventory() {
   const value = items.reduce((a, p) => a + (p.cost || 0) * p.stock, 0);
   const create = async () => {
     if (!form.name) { toast.error('Product needs a name'); return; }
-    const p = await createProductApi({ ...form, price: Number(form.price) || 0, cost: Number(form.cost) || 0, stock: Number(form.stock) || 0, reorder: Number(form.reorder) || 0 });
-    setForm(EMPTY_PRODUCT); setAdding(false); await load(); toast.success('Product added'); setSel(p);
+    const body = { ...form, price: Number(form.price) || 0, cost: Number(form.cost) || 0, stock: Number(form.stock) || 0, reorder: Number(form.reorder) || 0 };
+    const tmp = { ...body, id: 'tmp-' + Date.now(), _pending: true, active: true, location: body.location || 'Main Warehouse', status: body.stock <= body.reorder ? (body.stock <= 0 ? 'Out of stock' : 'Low') : 'In stock' };
+    setItems((x) => [tmp, ...x]); setForm(EMPTY_PRODUCT); setAdding(false);
+    try {
+      const p = await createProductApi(body);
+      setItems((x) => x.map((i) => (i.id === tmp.id ? p : i))); cache.products = null; toast.success('Product added'); load();
+    } catch (e) { setItems((x) => x.filter((i) => i.id !== tmp.id)); toast.error(e.message); }
   };
 
   if (sel) return <ProductManage product={sel} onBack={() => { setSel(null); load(); }} reload={load} />;
+
+  if (!loaded) return (
+    <>
+      <SkeletonStats n={4} />
+      <div className="flex gap-3 mb-4"><Skeleton className="h-11 flex-1" /><Skeleton className="h-11 w-40" /></div>
+      <SkeletonTable rows={6} />
+    </>
+  );
 
   return (
     <>
@@ -471,19 +518,29 @@ function Inventory() {
       )}
       <div className="panel overflow-hidden">
         <div className="hidden md:grid grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Category</span><span>Shop</span><span>Price</span><span>Stock</span><span></span></div>
-        {shown.map((p) => (
-          <button key={p.id} onClick={() => setSel(p)} className="w-full text-left grid grid-cols-[1fr_auto] md:grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850 transition-colors">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
-              <div className="min-w-0"><p className="text-sm text-steel-100 leading-tight truncate">{p.name}</p><p className="font-mono text-[0.68rem] text-steel-500 truncate">{p.sku || '—'} · {p.location}</p><p className="text-xs text-steel-500 mt-0.5 md:hidden"><StockBadge s={p.status} /></p></div>
-            </div>
-            <span className="text-sm text-steel-400 hidden md:block truncate">{p.category}</span>
-            <span className="hidden md:block">{p.active ? <span className="mono-label text-ok">Live</span> : <span className="mono-label text-steel-500">Hidden</span>}</span>
-            <span className="font-mono text-sm text-steel-100 hidden md:block">{money(p.price)}</span>
-            <div className="hidden md:flex items-center gap-2"><span className="font-mono text-sm tabnum" style={{ color: STOCK_HEX[p.status] }}>{p.stock}</span><StockBadge s={p.status} /></div>
-            <div className="flex items-center gap-2 justify-self-end"><span className="md:hidden font-mono text-sm tabnum text-steel-100">{p.stock}</span><Icon name="chevronRight" className="w-4 h-4 text-steel-500" /></div>
-          </button>
-        ))}
+        <motion.div variants={listV} initial="hidden" animate="show">
+          <AnimatePresence initial={false}>
+            {shown.map((p) => (
+              <motion.button key={p.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.2 } }}
+                onClick={() => !p._pending && setSel(p)} disabled={p._pending}
+                className={`w-full text-left grid grid-cols-[1fr_auto] md:grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center transition-colors ${p._pending ? 'shimmer-row opacity-70' : 'hover:bg-steel-850'}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
+                  <div className="min-w-0"><p className="text-sm text-steel-100 leading-tight truncate">{p.name}</p><p className="font-mono text-[0.68rem] text-steel-500 truncate">{p.sku || '—'} · {p.location}</p><p className="text-xs text-steel-500 mt-0.5 md:hidden"><StockBadge s={p.status} /></p></div>
+                </div>
+                <span className="text-sm text-steel-400 hidden md:block truncate">{p.category}</span>
+                <span className="hidden md:block">{p.active ? <span className="mono-label text-ok">Live</span> : <span className="mono-label text-steel-500">Hidden</span>}</span>
+                <span className="font-mono text-sm text-steel-100 hidden md:block">{money(p.price)}</span>
+                <div className="hidden md:flex items-center gap-2"><span className="font-mono text-sm tabnum" style={{ color: STOCK_HEX[p.status] }}>{p.stock}</span><StockBadge s={p.status} /></div>
+                <div className="flex items-center gap-2 justify-self-end">
+                  {p._pending
+                    ? <span className="mono-label text-red-400 inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</span>
+                    : <><span className="md:hidden font-mono text-sm tabnum text-steel-100">{p.stock}</span><Icon name="chevronRight" className="w-4 h-4 text-steel-500" /></>}
+                </div>
+              </motion.button>
+            ))}
+          </AnimatePresence>
+        </motion.div>
         {loaded && shown.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products{q || filter !== 'all' ? ' match your filter' : ' yet'}.</p>}
       </div>
       <p className="mono-label text-steel-500 mt-3">Open a product to edit the shop listing and record warehouse movements. “Live” = visible in the public shop.</p>
@@ -495,25 +552,55 @@ function Inventory() {
 const CONTENT_TYPES = ['Article', 'Case study', 'Video', 'Standard'];
 const EMPTY_CONTENT = { type: 'Article', title: '', excerpt: '', body: '', status: 'Draft', image: '', youtube: '' };
 function SiteManagement() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(cache.content || []);
   const [q, setQ] = useState('');
-  const [edit, setEdit] = useState(null); // content object or {} for new
-  const [loaded, setLoaded] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [loaded, setLoaded] = useState(!!cache.content);
 
-  const load = useCallback(async () => { try { setItems(await listContent()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  const load = useCallback(async () => {
+    try { const d = await listContent(); cache.content = d; setItems(d); } catch (e) { toast.error(e.message); } finally { setLoaded(true); }
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   const filtered = items.filter((c) => `${c.title} ${c.type}`.toLowerCase().includes(q.toLowerCase()));
   const pub = items.filter((c) => c.status === 'Published').length;
-  const publishToggle = async (c) => { const u = await updateContentApi(c.id, { status: c.status === 'Published' ? 'Draft' : 'Published' }); setItems((x) => x.map((i) => (i.id === c.id ? u : i))); toast(u.status === 'Published' ? 'Published' : 'Unpublished'); };
-  const del = async (id) => { await deleteContentApi(id); setItems((x) => x.filter((c) => c.id !== id)); toast('Content removed'); };
+  const statusColor = (s) => (s === 'Published' ? 'var(--color-ok)' : 'var(--color-steel-400)');
+
+  const publishToggle = async (c) => {
+    const next = c.status === 'Published' ? 'Draft' : 'Published';
+    const snap = items;
+    setItems((x) => x.map((i) => (i.id === c.id ? { ...i, status: next } : i)));
+    try { await updateContentApi(c.id, { status: next }); cache.content = null; toast(next === 'Published' ? 'Published' : 'Unpublished'); }
+    catch (e) { setItems(snap); toast.error(e.message); }
+  };
+  const del = async (id) => {
+    const snap = items;
+    setItems((x) => x.filter((c) => c.id !== id)); toast('Content removed');
+    try { await deleteContentApi(id); cache.content = null; } catch (e) { setItems(snap); toast.error(e.message); }
+  };
   const saveEdit = async (data) => {
     if (!data.title) { toast.error('Title required'); return; }
-    if (data.id) { const u = await updateContentApi(data.id, data); setItems((x) => x.map((c) => (c.id === data.id ? u : c))); toast.success('Saved'); }
-    else { const c = await createContentApi(data); setItems([c, ...items]); toast.success('Created'); }
     setEdit(null);
+    if (data.id) {
+      const snap = items;
+      setItems((x) => x.map((c) => (c.id === data.id ? { ...c, ...data } : c)));
+      try { const u = await updateContentApi(data.id, data); setItems((x) => x.map((c) => (c.id === data.id ? u : c))); cache.content = null; toast.success('Saved'); }
+      catch (e) { setItems(snap); toast.error(e.message); }
+    } else {
+      const tmp = { ...data, id: 'tmp-' + Date.now(), _pending: true, date: 'just now' };
+      setItems((x) => [tmp, ...x]);
+      try { const c = await createContentApi(data); setItems((x) => x.map((i) => (i.id === tmp.id ? c : i))); cache.content = null; toast.success('Created'); }
+      catch (e) { setItems((x) => x.filter((i) => i.id !== tmp.id)); toast.error(e.message); }
+    }
   };
-  const statusColor = (s) => (s === 'Published' ? 'var(--color-ok)' : 'var(--color-steel-400)');
+
+  if (!loaded) return (
+    <>
+      <SkeletonStats n={3} />
+      <div className="flex gap-3 mb-4"><Skeleton className="h-11 flex-1" /><Skeleton className="h-11 w-36" /></div>
+      <SkeletonCards n={4} cols="sm:grid-cols-2" />
+    </>
+  );
 
   return (
     <>
@@ -526,23 +613,29 @@ function SiteManagement() {
         <label className="relative flex-1"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" className="w-4 h-4" /></span><input value={q} onChange={(e) => setQ(e.target.value)} className="input !pl-9 w-full" placeholder="Search content…" /></label>
         <button onClick={() => setEdit({ ...EMPTY_CONTENT })} className="btn btn-red !py-2.5 shrink-0"><Icon name="plus" className="w-4 h-4" /> New content</button>
       </div>
-      <div className="grid sm:grid-cols-2 gap-4">
-        {filtered.map((c) => (
-          <div key={c.id} className="panel overflow-hidden flex">
-            <div className="w-24 shrink-0 bg-steel-800 relative">{c.image ? <img src={photoSrc(c.image)} alt="" className="absolute inset-0 w-full h-full object-cover duotone" /> : null}{c.type === 'Video' && <span className="absolute inset-0 grid place-items-center text-white"><Icon name="play" className="w-6 h-6" /></span>}</div>
-            <div className="flex-1 min-w-0 p-4">
-              <div className="flex items-center gap-2 mb-1"><span className="mono-label text-red-400">{c.type}</span><span className="mono-label" style={{ color: statusColor(c.status) }}>· {c.status}</span></div>
-              <p className="text-sm text-steel-100 font-medium leading-tight line-clamp-2">{c.title}</p>
-              <div className="flex items-center gap-2 mt-3">
-                <button onClick={() => publishToggle(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">{c.status === 'Published' ? 'Unpublish' : 'Publish'}</button>
-                <button onClick={() => setEdit(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">Edit</button>
-                <button onClick={() => del(c.id)} className="text-steel-500 hover:text-red-400 ml-auto"><Icon name="x" className="w-4 h-4" /></button>
+      <motion.div className="grid sm:grid-cols-2 gap-4" variants={listV} initial="hidden" animate="show">
+        <AnimatePresence initial={false}>
+          {filtered.map((c) => (
+            <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }} className={`panel overflow-hidden flex ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
+              <div className="w-24 shrink-0 bg-steel-800 relative">{c.image ? <img src={photoSrc(c.image)} alt="" className="absolute inset-0 w-full h-full object-cover duotone" /> : null}{c.type === 'Video' && <span className="absolute inset-0 grid place-items-center text-white"><Icon name="play" className="w-6 h-6" /></span>}</div>
+              <div className="flex-1 min-w-0 p-4">
+                <div className="flex items-center gap-2 mb-1"><span className="mono-label text-red-400">{c.type}</span><span className="mono-label" style={{ color: statusColor(c.status) }}>· {c.status}</span></div>
+                <p className="text-sm text-steel-100 font-medium leading-tight line-clamp-2">{c.title}</p>
+                {c._pending
+                  ? <p className="mono-label text-red-400 mt-3 inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</p>
+                  : (
+                    <div className="flex items-center gap-2 mt-3">
+                      <button onClick={() => publishToggle(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">{c.status === 'Published' ? 'Unpublish' : 'Publish'}</button>
+                      <button onClick={() => setEdit(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">Edit</button>
+                      <button onClick={() => del(c.id)} className="text-steel-500 hover:text-red-400 ml-auto"><Icon name="x" className="w-4 h-4" /></button>
+                    </div>
+                  )}
               </div>
-            </div>
-          </div>
-        ))}
-        {loaded && filtered.length === 0 && <p className="mono-label text-steel-500 py-12 text-center sm:col-span-2">No content{q ? ` matches “${q}”` : ''}.</p>}
-      </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {filtered.length === 0 && <p className="mono-label text-steel-500 py-12 text-center sm:col-span-2">No content{q ? ` matches “${q}”` : ''}.</p>}
+      </motion.div>
       <p className="mono-label text-steel-500 mt-3">Published items appear on the public website; drafts stay hidden.</p>
       <ContentEditor data={edit} onClose={() => setEdit(null)} onSave={saveEdit} />
     </>
@@ -588,8 +681,9 @@ const TAB_META = {
 
 function Console({ admin, onOut }) {
   const [tab, setTab] = useState('overview');
-  const [clients, setClients] = useState([]);
-  const [pins, setPins] = useState([]);
+  const [clients, setClients] = useState(cache.clients || []);
+  const [pins, setPins] = useState(cache.pins || []);
+  const [loaded, setLoaded] = useState(!!cache.clients);
   const [sel, setSel] = useState(null);
   const [nc, setNc] = useState({ name: '', contact: '', email: '' });
   const [creating, setCreating] = useState(false);
@@ -597,19 +691,32 @@ function Console({ admin, onOut }) {
   const [drawer, setDrawer] = useState(false);
 
   const loadAll = useCallback(async () => {
-    try { const [cs, mp] = await Promise.all([listClients(), getMap()]); setClients(cs); setPins(mp); }
+    try { const [cs, mp] = await Promise.all([listClients(), getMap()]); cache.clients = cs; cache.pins = mp; setClients(cs); setPins(mp); }
     catch (err) { if (/401|token/i.test(err.message)) onOut(); else toast.error(err.message); }
+    finally { setLoaded(true); }
   }, [onOut]);
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const openClient = async (id) => { try { setSel(await getClient(id)); } catch (err) { toast.error(err.message); } };
-  const reloadClient = async () => { if (!sel) return null; const c = await getClient(sel.id); setSel(c); return c; };
+  // hover-to-prefetch: quietly warm a client's detail so the click feels instant
+  const prefetch = (id) => { if (!cache.detail[id]) getClient(id).then((c) => { cache.detail[id] = c; }).catch(() => {}); };
+  const openClient = async (id) => {
+    const summary = clients.find((c) => c.id === id);
+    setSel(cache.detail[id] || (summary ? { ...summary, projects: undefined } : { id, name: '…', projects: undefined }));
+    try { const full = await getClient(id); cache.detail[id] = full; setSel(full); } catch (err) { toast.error(err.message); }
+  };
+  const reloadClient = async () => { if (!sel) return null; const c = await getClient(sel.id); cache.detail[c.id] = c; setSel(c); return c; };
   const createC = async () => {
     if (!nc.name) { toast.error('Client needs a name'); return; }
-    try { const c = await createClient(nc); setNc({ name: '', contact: '', email: '' }); setCreating(false); await loadAll(); toast.success(`${c.name} created · PIN ${c.pin}`); openClient(c.id); }
-    catch (err) { toast.error(err.message); }
+    const body = { ...nc }; const tmp = { ...body, id: 'tmp-' + Date.now(), _pending: true, slug: '…', pin: '····', projectCount: 0 };
+    setClients((x) => [tmp, ...x]); setNc({ name: '', contact: '', email: '' }); setCreating(false);
+    try { const c = await createClient(body); cache.clients = null; setClients((x) => x.map((i) => (i.id === tmp.id ? c : i))); toast.success(`${c.name} created · PIN ${c.pin}`); loadAll(); openClient(c.id); }
+    catch (err) { setClients((x) => x.filter((i) => i.id !== tmp.id)); toast.error(err.message); }
   };
-  const delC = async (id, name) => { await deleteClient(id); await loadAll(); toast(`${name} removed`); };
+  const delC = async (id, name) => {
+    const snap = clients;
+    setClients((x) => x.filter((c) => c.id !== id)); toast(`${name} removed`);
+    try { await deleteClient(id); cache.clients = null; delete cache.detail[id]; loadAll(); } catch (err) { setClients(snap); toast.error(err.message); }
+  };
 
   const totalProjects = clients.reduce((a, c) => a + c.projectCount, 0);
   const activePins = pins.filter((p) => p.status === 'Active').length;
@@ -689,6 +796,7 @@ function Console({ admin, onOut }) {
           {sel ? (
             <ClientDetail client={sel} onBack={() => setSel(null)} reloadClient={reloadClient} reloadAll={loadAll} />
           ) : tab === 'overview' ? (
+            !loaded ? <><SkeletonStats n={4} /><SkeletonMap height={460} /></> : (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
                 {[['Clients', clients.length, 'user'], ['Projects', totalProjects, 'dashboard'], ['Active on map', activePins, 'pin'], ['Portfolio value', money(totalValue), 'analytics']].map(([l, v, ic]) => (
@@ -701,6 +809,7 @@ function Console({ admin, onOut }) {
                 <span className="mono-label text-steel-600 ml-auto">Ring = % complete · click a pin for detail</span>
               </div>
             </>
+            )
           ) : tab === 'inventory' ? (
             <Inventory />
           ) : tab === 'site' ? (
@@ -716,19 +825,25 @@ function Console({ admin, onOut }) {
                   <div className="sm:col-span-3"><button onClick={createC} className="btn btn-red">Create client + generate PIN</button></div>
                 </div>
               )}
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {clients.map((c) => (
-                  <div key={c.id} className="panel p-5">
-                    <div className="flex items-start justify-between"><div><h3 className="font-display text-lg text-steel-50">{c.name}</h3><p className="text-sm text-steel-400 mt-0.5">{c.contact || '—'}</p></div><span className="mono-label text-steel-500">{c.projectCount} proj</span></div>
-                    <div className="flex items-center justify-between mt-4 panel-800 p-2.5"><div><p className="mono-label text-steel-500">PIN</p><p className="font-mono text-lg text-steel-50 tracking-[0.3em]">{c.pin}</p></div><span className="font-mono text-[0.66rem] text-steel-500 truncate max-w-[8rem]">/portal?c={c.slug}</span></div>
-                    <div className="flex gap-2 mt-3">
-                      <button onClick={() => openClient(c.id)} className="btn btn-red !py-2 flex-1 text-[0.78rem]">Manage</button>
-                      <button onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
-                      <button onClick={() => delC(c.id, c.name)} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {!loaded ? <SkeletonCards n={6} /> : (
+                <motion.div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" variants={listV} initial="hidden" animate="show">
+                  <AnimatePresence initial={false}>
+                    {clients.map((c) => (
+                      <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }}
+                        onMouseEnter={() => !c._pending && prefetch(c.id)}
+                        className={`panel p-5 ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
+                        <div className="flex items-start justify-between"><div><h3 className="font-display text-lg text-steel-50">{c.name}</h3><p className="text-sm text-steel-400 mt-0.5">{c.contact || '—'}</p></div>{c._pending ? <span className="mono-label text-red-400 inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</span> : <span className="mono-label text-steel-500">{c.projectCount} proj</span>}</div>
+                        <div className="flex items-center justify-between mt-4 panel-800 p-2.5"><div><p className="mono-label text-steel-500">PIN</p><p className="font-mono text-lg text-steel-50 tracking-[0.3em]">{c.pin}</p></div><span className="font-mono text-[0.66rem] text-steel-500 truncate max-w-[8rem]">/portal?c={c.slug}</span></div>
+                        <div className="flex gap-2 mt-3">
+                          <button onClick={() => openClient(c.id)} disabled={c._pending} className="btn btn-red !py-2 flex-1 text-[0.78rem] disabled:opacity-50">Manage</button>
+                          <button onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
+                          <button onClick={() => delC(c.id, c.name)} disabled={c._pending} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </motion.div>
+              )}
             </>
           )}
         </main>

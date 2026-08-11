@@ -209,4 +209,8 @@ body { margin:0; font-family:var(--font-body); font-weight:400; color:var(--colo
 .animate-pulse-dot { animation:pulse-dot 1.8s ease-in-out infinite; }
 @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
 .animate-floaty { animation:floaty 6s ease-in-out infinite; }
+/* optimistic "Creating…" placeholder — a light sweep moving across the row */
+@keyframes ars-shimmer { 100% { transform: translateX(100%); } }
+.shimmer-row { position: relative; overflow: hidden; }
+.shimmer-row::after { content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(226,33,28,.10), transparent); animation: ars-shimmer 1.3s ease-in-out infinite; pointer-events:none; }
 @media (prefers-reduced-motion: reduce) { *{animation-duration:.001ms!important;transition-duration:.001ms!important} html{scroll-behavior:auto} }
