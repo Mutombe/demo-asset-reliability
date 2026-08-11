@@ -42,6 +42,35 @@ function StatusPill({ s }) {
   return <span className="inline-flex items-center gap-1.5 font-mono text-[0.66rem] uppercase px-2 py-0.5 rounded" style={{ color: c, background: `${c}18` }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} /> {s}</span>;
 }
 
+/* pagination — slice a list into pages, reset to page 1 when it shrinks */
+function usePaged(items, size = 8) {
+  const [page, setPage] = useState(1);
+  const total = Math.max(1, Math.ceil(items.length / size));
+  useEffect(() => { if (page > total) setPage(1); }, [items.length, total, page]);
+  return { page, setPage, total, slice: items.slice((page - 1) * size, page * size), count: items.length };
+}
+function Pagination({ page, total, setPage, count, label = 'items' }) {
+  const nums = [];
+  const win = 5, from = Math.max(1, Math.min(page - 2, total - win + 1)), to = Math.min(total, from + win - 1);
+  for (let i = from; i <= to; i++) nums.push(i);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+      <span className="mono-label text-steel-500">{count} {label}{total > 1 ? ` · page ${page} of ${total}` : ''}</span>
+      {total > 1 && (
+        <div className="flex items-center gap-1">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className="grid place-items-center w-8 h-8 rounded-md border border-steel-700 text-steel-300 disabled:opacity-40 hover:border-red-500 hover:text-red-500 transition-colors"><Icon name="chevronLeft" className="w-4 h-4" /></button>
+          {from > 1 && <span className="mono-label text-steel-500 px-1">…</span>}
+          {nums.map((n) => (
+            <button key={n} onClick={() => setPage(n)} className={`grid place-items-center min-w-[2rem] h-8 px-1.5 rounded-md font-mono text-xs transition-colors ${n === page ? 'bg-red-500 text-white' : 'border border-steel-700 text-steel-300 hover:border-red-500'}`}>{n}</button>
+          ))}
+          {to < total && <span className="mono-label text-steel-500 px-1">…</span>}
+          <button onClick={() => setPage((p) => Math.min(total, p + 1))} disabled={page >= total} className="grid place-items-center w-8 h-8 rounded-md border border-steel-700 text-steel-300 disabled:opacity-40 hover:border-red-500 hover:text-red-500 transition-colors"><Icon name="chevronRight" className="w-4 h-4" /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════════ ADMIN AUTH — MODAL (sign in / register + Google) ═══════════════ */
 function AdminLogin({ onIn }) {
   const nav = useNavigate();
@@ -584,6 +613,7 @@ function Catalogue() {
     `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(q.toLowerCase()) &&
     (filter === 'all' || p.status === filter)
   );
+  const pg = usePaged(shown, 10);
   const inStock = items.filter((p) => p.status === 'In stock').length;
   const low = items.filter((p) => p.status === 'Low').length;
   const out = items.filter((p) => p.status === 'Out of stock').length;
@@ -642,7 +672,7 @@ function Catalogue() {
         <div className="hidden md:grid grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Category</span><span>Shop</span><span>Price</span><span>Stock</span><span></span></div>
         <motion.div variants={listV} initial="hidden" animate="show">
           <AnimatePresence initial={false}>
-            {shown.map((p) => (
+            {pg.slice.map((p) => (
               <motion.button key={p.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.2 } }}
                 onClick={() => !p._pending && setSel(p)} disabled={p._pending}
                 className={`w-full text-left grid grid-cols-[1fr_auto] md:grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center transition-colors ${p._pending ? 'shimmer-row opacity-70' : 'hover:bg-steel-850'}`}>
@@ -665,8 +695,49 @@ function Catalogue() {
         </motion.div>
         {loaded && shown.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products{q || filter !== 'all' ? ' match your filter' : ' yet'}.</p>}
       </div>
-      <p className="mono-label text-steel-500 mt-3">Open a product to edit the shop listing and record warehouse movements. “Live” = visible in the public shop.</p>
+      <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="products" />
+      <p className="mono-label text-steel-500 mt-2">Open a product to edit the shop listing and record warehouse movements. “Live” = visible in the public shop.</p>
     </>
+  );
+}
+
+/* ── SUPPLIER DETAIL ── */
+function SupplierManage({ supplier, onBack, reload }) {
+  const [s, setS] = useState(supplier);
+  const [prods, setProds] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setS((x) => ({ ...x, [k]: v }));
+  useEffect(() => { listProducts().then((all) => setProds(all.filter((p) => p.supplier_id === supplier.id))).catch(() => {}); }, [supplier.id]);
+  const save = async () => { setSaving(true); try { const u = await updateSupplier(s.id, { ...s, lead_time: Number(s.lead_time) || 0 }); setS((x) => ({ ...x, ...u })); toast.success('Supplier saved'); reload(); } catch (e) { toast.error(e.message); } finally { setSaving(false); } };
+  const remove = async () => { await deleteSupplier(s.id); toast('Supplier removed'); reload(); onBack(); };
+  return (
+    <div>
+      <nav className="flex items-center gap-1.5 text-sm mb-4"><button onClick={onBack} className="inline-flex items-center gap-1.5 text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> Suppliers</button><Icon name="chevronRight" className="w-3.5 h-3.5 text-steel-600" /><span className="text-steel-100 truncate max-w-[40vw]">{s.name}</span></nav>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><h2 className="font-display text-xl text-steel-50">{s.name}</h2><div className="flex gap-2"><button onClick={remove} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button><button onClick={save} disabled={saving} className="btn btn-red !py-2.5">{saving ? 'Saving…' : 'Save changes'}</button></div></div>
+      <div className="grid lg:grid-cols-[1fr_1fr] gap-5">
+        <div className="panel p-5 sm:p-6 grid sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2"><Field label="Company name"><input className="input" value={s.name} onChange={(e) => set('name', e.target.value)} /></Field></div>
+          <Field label="Contact person"><input className="input" value={s.contact} onChange={(e) => set('contact', e.target.value)} /></Field>
+          <Field label="Email"><input className="input" value={s.email} onChange={(e) => set('email', e.target.value)} /></Field>
+          <Field label="Phone"><input className="input" value={s.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
+          <Field label="Lead time (days)"><input type="number" className="input" value={s.lead_time} onChange={(e) => set('lead_time', e.target.value)} /></Field>
+          <div className="sm:col-span-2"><Field label="Payment terms"><input className="input" value={s.terms} onChange={(e) => set('terms', e.target.value)} placeholder="Net 30" /></Field></div>
+        </div>
+        <div className="panel p-5 sm:p-6">
+          <h3 className="font-display text-steel-50 mb-3">Products supplied ({prods.length})</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {prods.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 panel-800 p-2.5">
+                <div className="w-9 h-9 rounded overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
+                <div className="flex-1 min-w-0"><p className="text-sm text-steel-100 truncate">{p.name}</p><p className="font-mono text-[0.66rem] text-steel-500">{p.sku} · {money(p.price)}</p></div>
+                <StockBadge s={p.status} />
+              </div>
+            ))}
+            {!prods.length && <p className="mono-label text-steel-500">No products from this supplier yet — set the supplier on a product in the Catalogue.</p>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -675,6 +746,7 @@ const EMPTY_SUP = { name: '', contact: '', email: '', phone: '', lead_time: 7, t
 function Suppliers() {
   const [items, setItems] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [sel, setSel] = useState(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_SUP);
   const load = useCallback(async () => { try { setItems(await listSuppliers()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
@@ -687,6 +759,8 @@ function Suppliers() {
     catch (e) { setItems((x) => x.filter((i) => i.id !== tmp.id)); toast.error(e.message); }
   };
   const del = async (id) => { const snap = items; setItems((x) => x.filter((i) => i.id !== id)); toast('Supplier removed'); try { await deleteSupplier(id); } catch (e) { setItems(snap); toast.error(e.message); } };
+  const pg = usePaged(items, 9);
+  if (sel) return <SupplierManage supplier={sel} onBack={() => { setSel(null); load(); }} reload={load} />;
   if (!loaded) return <SkeletonCards n={4} />;
   return (
     <>
@@ -704,8 +778,8 @@ function Suppliers() {
       )}
       <motion.div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" variants={listV} initial="hidden" animate="show">
         <AnimatePresence initial={false}>
-          {items.map((sp) => (
-            <motion.div key={sp.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96 }} className={`panel p-5 ${sp._pending ? 'shimmer-row opacity-70' : ''}`}>
+          {pg.slice.map((sp) => (
+            <motion.div key={sp.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96 }} onClick={() => !sp._pending && setSel(sp)} className={`panel p-5 ${sp._pending ? 'shimmer-row opacity-70' : 'cursor-pointer hover:border-line-2 transition-colors'}`}>
               <div className="flex items-start justify-between"><div className="min-w-0"><h3 className="font-display text-lg text-steel-50 truncate">{sp.name}</h3><p className="text-sm text-steel-400 mt-0.5">{sp.contact || '—'}</p></div><span className="mono-label text-steel-500 shrink-0">{sp.productCount} SKU</span></div>
               <div className="mt-3 space-y-1 text-sm text-steel-400">
                 {sp.email && <p className="inline-flex items-center gap-1.5"><Icon name="mail" className="w-3.5 h-3.5" /> {sp.email}</p>}
@@ -715,11 +789,15 @@ function Suppliers() {
                 <div><p className="mono-label text-steel-500">Lead time</p><p className="font-mono text-steel-100">{sp.lead_time} days</p></div>
                 <div className="text-right"><p className="mono-label text-steel-500">Terms</p><p className="font-mono text-steel-100">{sp.terms || '—'}</p></div>
               </div>
-              {!sp._pending && <button onClick={() => del(sp.id)} className="btn btn-ghost w-full !py-2 mt-3 text-[0.78rem] hover:!text-red-500">Remove</button>}
+              <div className="flex gap-2 mt-3">
+                <button onClick={(e) => { e.stopPropagation(); setSel(sp); }} className="btn btn-red !py-2 flex-1 text-[0.78rem]">Manage</button>
+                {!sp._pending && <button onClick={(e) => { e.stopPropagation(); del(sp.id); }} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>}
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>
       </motion.div>
+      <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="suppliers" />
     </>
   );
 }
@@ -729,11 +807,13 @@ function MovementsLedger() {
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => { allMovements().then(setRows).catch((e) => toast.error(e.message)).finally(() => setLoaded(true)); }, []);
+  const pg = usePaged(rows, 12);
   if (!loaded) return <SkeletonTable rows={8} />;
   return (
+    <>
     <div className="panel overflow-hidden">
       <div className="hidden md:grid grid-cols-[1.6fr_1fr_0.8fr_1fr_1.4fr] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Movement</span><span>Qty</span><span>Balance</span><span>Reason</span></div>
-      {rows.map((m) => (
+      {pg.slice.map((m) => (
         <div key={m.id} className="grid grid-cols-2 md:grid-cols-[1.6fr_1fr_0.8fr_1fr_1.4fr] gap-3 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center">
           <div className="min-w-0"><p className="text-sm text-steel-100 truncate">{m.product}</p><p className="font-mono text-[0.66rem] text-steel-500">{m.sku} · {m.date}</p></div>
           <span className="text-sm text-steel-300 hidden md:block">{m.kind}</span>
@@ -744,6 +824,8 @@ function MovementsLedger() {
       ))}
       {loaded && !rows.length && <p className="mono-label text-steel-500 py-12 text-center">No stock movements yet.</p>}
     </div>
+    <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="movements" />
+    </>
   );
 }
 
@@ -778,6 +860,7 @@ function PurchaseOrders() {
   const send = async (id) => { try { await updatePO(id, { status: 'Sent' }); await load(); toast('Marked as sent'); } catch (e) { toast.error(e.message); } };
   const del = async (id) => { const snap = pos; setPos((x) => x.filter((p) => p.id !== id)); try { await deletePO(id); } catch (e) { setPos(snap); toast.error(e.message); } };
 
+  const pg = usePaged(pos, 8);
   if (!loaded) return <SkeletonTable rows={5} />;
   return (
     <>
@@ -813,7 +896,7 @@ function PurchaseOrders() {
         </div>
       )}
       <div className="space-y-3">
-        {pos.map((po) => (
+        {pg.slice.map((po) => (
           <div key={po.id} className="panel p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><div className="flex items-center gap-2"><p className="font-mono text-sm text-red-400">{po.ref}</p><span className="inline-flex items-center gap-1.5 font-mono text-[0.66rem] uppercase px-2 py-0.5 rounded" style={{ color: PO_STATUS_HEX[po.status], background: `${PO_STATUS_HEX[po.status]}18` }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: PO_STATUS_HEX[po.status] }} /> {po.status}</span></div><p className="text-sm text-steel-300 mt-1">{po.supplier || 'No supplier'} · {po.lines.length} line{po.lines.length !== 1 ? 's' : ''} · {po.date}</p></div>
@@ -831,6 +914,7 @@ function PurchaseOrders() {
         ))}
         {!pos.length && <p className="mono-label text-steel-500 py-12 text-center">No purchase orders. Use “Reorder low stock” to raise one.</p>}
       </div>
+      <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="orders" />
     </>
   );
 }
@@ -867,6 +951,7 @@ function SiteManagement() {
 
   const filtered = items.filter((c) => `${c.title} ${c.type}`.toLowerCase().includes(q.toLowerCase()));
   const pub = items.filter((c) => c.status === 'Published').length;
+  const pg = usePaged(filtered, 8);
   const statusColor = (s) => (s === 'Published' ? 'var(--color-ok)' : 'var(--color-steel-400)');
 
   const publishToggle = async (c) => {
@@ -918,8 +1003,8 @@ function SiteManagement() {
       </div>
       <motion.div className="grid sm:grid-cols-2 gap-4" variants={listV} initial="hidden" animate="show">
         <AnimatePresence initial={false}>
-          {filtered.map((c) => (
-            <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }} className={`panel overflow-hidden flex ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
+          {pg.slice.map((c) => (
+            <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }} onClick={() => !c._pending && setEdit(c)} className={`panel overflow-hidden flex ${c._pending ? 'shimmer-row opacity-70' : 'cursor-pointer hover:border-line-2 transition-colors'}`}>
               <div className="w-24 shrink-0 bg-steel-800 relative">{c.image ? <img src={photoSrc(c.image)} alt="" className="absolute inset-0 w-full h-full object-cover duotone" /> : null}{c.type === 'Video' && <span className="absolute inset-0 grid place-items-center text-white"><Icon name="play" className="w-6 h-6" /></span>}</div>
               <div className="flex-1 min-w-0 p-4">
                 <div className="flex items-center gap-2 mb-1"><span className="mono-label text-red-400">{c.type}</span><span className="mono-label" style={{ color: statusColor(c.status) }}>· {c.status}</span></div>
@@ -928,9 +1013,9 @@ function SiteManagement() {
                   ? <p className="mono-label text-red-400 mt-3 inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</p>
                   : (
                     <div className="flex items-center gap-2 mt-3">
-                      <button onClick={() => publishToggle(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">{c.status === 'Published' ? 'Unpublish' : 'Publish'}</button>
-                      <button onClick={() => setEdit(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">Edit</button>
-                      <button onClick={() => del(c.id)} className="text-steel-500 hover:text-red-400 ml-auto"><Icon name="x" className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); publishToggle(c); }} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">{c.status === 'Published' ? 'Unpublish' : 'Publish'}</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEdit(c); }} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">Edit</button>
+                      <button onClick={(e) => { e.stopPropagation(); del(c.id); }} className="text-steel-500 hover:text-red-400 ml-auto"><Icon name="x" className="w-4 h-4" /></button>
                     </div>
                   )}
               </div>
@@ -939,7 +1024,8 @@ function SiteManagement() {
         </AnimatePresence>
         {filtered.length === 0 && <p className="mono-label text-steel-500 py-12 text-center sm:col-span-2">No content{q ? ` matches “${q}”` : ''}.</p>}
       </motion.div>
-      <p className="mono-label text-steel-500 mt-3">Published items appear on the public website; drafts stay hidden.</p>
+      <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="items" />
+      <p className="mono-label text-steel-500 mt-2">Published items appear on the public website; drafts stay hidden.</p>
       <ContentEditor data={edit} onClose={() => setEdit(null)} onSave={saveEdit} />
     </>
   );
@@ -982,6 +1068,7 @@ function ProjectsView() {
   const open = async (row) => { try { const c = await getClient(row.client_id); const fresh = (c.projects || []).find((p) => p.id === row.id); setSel({ project: fresh || row, clientId: row.client_id }); } catch (e) { toast.error(e.message); } };
   const reloadSel = async () => { const c = await getClient(sel.clientId); return { projects: c.projects }; };
   const shown = rows.filter((p) => `${p.title} ${p.client} ${p.type}`.toLowerCase().includes(q.toLowerCase()) && (filter === 'all' || p.status === filter));
+  const pg = usePaged(shown, 12);
   if (sel) return <ProjectManage project={sel.project} onBack={() => { setSel(null); load(); }} reload={reloadSel} />;
   if (!loaded) return <><div className="flex gap-3 mb-4"><Skeleton className="h-11 flex-1" /></div><SkeletonTable rows={6} /></>;
   return (
@@ -992,7 +1079,7 @@ function ProjectsView() {
       </div>
       <div className="panel overflow-hidden">
         <div className="hidden md:grid grid-cols-[2fr_1.4fr_1.2fr_1fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Project</span><span>Client</span><span>Progress</span><span>Value</span><span></span></div>
-        {shown.map((p) => (
+        {pg.slice.map((p) => (
           <button key={p.id} onClick={() => open(p)} className="w-full text-left grid grid-cols-[1fr_auto] md:grid-cols-[2fr_1.4fr_1.2fr_1fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850 transition-colors">
             <div className="min-w-0"><StatusPill s={p.status} /><p className="text-sm text-steel-100 truncate mt-1">{p.title}</p><p className="text-xs text-steel-500 md:hidden">{p.client}</p></div>
             <span className="text-sm text-steel-300 hidden md:block truncate">{p.client}</span>
@@ -1003,6 +1090,7 @@ function ProjectsView() {
         ))}
         {loaded && !shown.length && <p className="mono-label text-steel-500 py-12 text-center">No projects{q || filter !== 'all' ? ' match your filter' : ''}.</p>}
       </div>
+      <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="projects" />
     </>
   );
 }
@@ -1021,6 +1109,7 @@ function UsersView() {
     catch (e) { toast.error(e.message); }
   };
   const del = async (u) => { const snap = users; setUsers((x) => x.filter((i) => i.id !== u.id)); try { await deleteUser(u.id); toast('User removed'); } catch (e) { setUsers(snap); toast.error(e.message); } };
+  const pg = usePaged(users, 10);
   if (!loaded) return <SkeletonTable rows={3} />;
   return (
     <>
@@ -1034,7 +1123,7 @@ function UsersView() {
         </div>
       )}
       <div className="panel overflow-hidden">
-        {users.map((u) => (
+        {pg.slice.map((u) => (
           <div key={u.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b border-steel-800 last:border-0">
             <span className="grid place-items-center w-9 h-9 rounded-full bg-red-500 text-white text-[0.72rem] font-display shrink-0">{(u.name || u.email).split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>
             <div className="flex-1 min-w-0"><p className="text-sm text-steel-100 truncate">{u.name} {u.self && <span className="mono-label text-red-400">· you</span>}</p><p className="mono-label text-steel-500 truncate">{u.email} · joined {u.created_at}</p></div>
@@ -1042,7 +1131,8 @@ function UsersView() {
           </div>
         ))}
       </div>
-      <p className="mono-label text-steel-500 mt-3">Invited users sign in at /admin with the email + password you set here.</p>
+      <Pagination page={pg.page} total={pg.total} setPage={pg.setPage} count={pg.count} label="users" />
+      <p className="mono-label text-steel-500 mt-2">Invited users sign in at /admin with the email + password you set here.</p>
     </>
   );
 }
@@ -1137,6 +1227,7 @@ function Console({ admin, onOut, setAdmin }) {
     try { await deleteClient(id); cache.clients = null; delete cache.detail[id]; loadAll(); } catch (err) { setClients(snap); toast.error(err.message); }
   };
 
+  const clientsPg = usePaged(clients, 9);
   const totalProjects = clients.reduce((a, c) => a + c.projectCount, 0);
   const activePins = pins.filter((p) => p.status === 'Active').length;
   const totalValue = pins.reduce((a, p) => a + (p.budget || 0), 0);
@@ -1170,10 +1261,10 @@ function Console({ admin, onOut, setAdmin }) {
         ))}
       </nav>
       <div className="px-3 py-3 border-t border-white/[0.06] shrink-0">
-        <div className={`flex items-center gap-2.5 ${collapsed && !mobile ? 'justify-center' : ''} mb-2`}>
+        <button onClick={() => go('profile')} title="Your profile" className={`w-full flex items-center gap-2.5 ${collapsed && !mobile ? 'justify-center' : ''} mb-2 rounded-lg p-1 -m-1 hover:bg-white/[0.05] transition-colors`}>
           <span className="grid place-items-center w-8 h-8 rounded-full bg-red-500 text-white text-[0.7rem] font-display shrink-0">{initials}</span>
-          {(!collapsed || mobile) && <div className="min-w-0 flex-1"><p className="text-sm text-white truncate leading-tight">{admin?.name || 'Admin'}</p><p className="text-[11px] text-white/40 truncate">{admin?.email || 'Administrator'}</p></div>}
-        </div>
+          {(!collapsed || mobile) && <div className="min-w-0 flex-1 text-left"><p className="text-sm text-white truncate leading-tight">{admin?.name || 'Admin'}</p><p className="text-[11px] text-white/40 truncate">{admin?.email || 'Administrator'}</p></div>}
+        </button>
         {(!collapsed || mobile)
           ? <button onClick={onOut} className="w-full text-sm text-white/70 border border-white/10 rounded-lg py-2 hover:bg-white/[0.06] hover:text-white transition">Sign out</button>
           : <button onClick={onOut} title="Sign out" className="w-full grid place-items-center py-2 rounded-lg text-white/50 hover:bg-white/[0.06] hover:text-white"><Icon name="x" className="w-4 h-4" /></button>}
@@ -1209,7 +1300,7 @@ function Console({ admin, onOut, setAdmin }) {
           </div>
           <div className="ml-auto flex items-center gap-4">
             <span className="hidden md:inline-flex items-center gap-1.5 text-[0.72rem] text-steel-400 font-mono"><span className="w-1.5 h-1.5 rounded-full animate-pulse-dot" style={{ background: 'var(--color-ok)' }} /> {API_BASE.replace('https://', '').replace('http://', '')}</span>
-            <span className="grid place-items-center w-9 h-9 rounded-full bg-red-500 text-white text-[0.72rem] font-display shrink-0">{initials}</span>
+            <button onClick={() => go('profile')} title="Your profile" className="grid place-items-center w-9 h-9 rounded-full bg-red-500 text-white text-[0.72rem] font-display shrink-0 hover:ring-2 hover:ring-red-300 transition">{initials}</button>
           </div>
         </header>
 
@@ -1253,23 +1344,27 @@ function Console({ admin, onOut, setAdmin }) {
                 </div>
               )}
               {!loaded ? <SkeletonCards n={6} /> : (
+                <>
                 <motion.div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" variants={listV} initial="hidden" animate="show">
                   <AnimatePresence initial={false}>
-                    {clients.map((c) => (
+                    {clientsPg.slice.map((c) => (
                       <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }}
                         onMouseEnter={() => !c._pending && prefetch(c.id)}
-                        className={`panel p-5 ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
+                        onClick={() => !c._pending && openClient(c.id)}
+                        className={`panel p-5 cursor-pointer hover:border-line-2 transition-colors ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
                         <div className="flex items-start justify-between"><div><h3 className="font-display text-lg text-steel-50">{c.name}</h3><p className="text-sm text-steel-400 mt-0.5">{c.contact || '—'}</p></div>{c._pending ? <span className="mono-label text-red-400 inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</span> : <span className="mono-label text-steel-500">{c.projectCount} proj</span>}</div>
                         <div className="flex items-center justify-between mt-4 panel-800 p-2.5"><div><p className="mono-label text-steel-500">PIN</p><p className="font-mono text-lg text-steel-50 tracking-[0.3em]">{c.pin}</p></div><span className="font-mono text-[0.66rem] text-steel-500 truncate max-w-[8rem]">/portal?c={c.slug}</span></div>
                         <div className="flex gap-2 mt-3">
-                          <button onClick={() => openClient(c.id)} disabled={c._pending} className="btn btn-red !py-2 flex-1 text-[0.78rem] disabled:opacity-50">Manage</button>
-                          <button onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
-                          <button onClick={() => delC(c.id, c.name)} disabled={c._pending} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
+                          <button onClick={(e) => { e.stopPropagation(); openClient(c.id); }} disabled={c._pending} className="btn btn-red !py-2 flex-1 text-[0.78rem] disabled:opacity-50">Manage</button>
+                          <button onClick={(e) => { e.stopPropagation(); copy(portalLink(c.slug), 'Link copied'); }} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
+                          <button onClick={(e) => { e.stopPropagation(); delC(c.id, c.name); }} disabled={c._pending} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
                         </div>
                       </motion.div>
                     ))}
                   </AnimatePresence>
                 </motion.div>
+                <Pagination page={clientsPg.page} total={clientsPg.total} setPage={clientsPg.setPage} count={clientsPg.count} label="clients" />
+                </>
               )}
             </>
           )}
