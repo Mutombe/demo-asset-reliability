@@ -11,6 +11,7 @@ import { portalAccess, STATUS_HEX, photoSrc, clientReport } from '../api';
 import { brand, portalKpis, portalAssets, portalReports, assetDetail, portalAvailability, portalAlertsSeries, portalMonths, workOrdersSeed } from '../data';
 
 const money = (n) => 'US$' + Number(n || 0).toLocaleString();
+const TASK_HEX = { 'To do': '#6b7280', 'In progress': '#e8930c', 'Blocked': '#e2211c', 'Done': '#1fae6b' };
 const statusColor = { ok: 'var(--color-ok)', warn: 'var(--color-warn)', crit: 'var(--color-crit)' };
 const statusLabel = { ok: 'Healthy', warn: 'Watch', crit: 'Critical' };
 
@@ -91,6 +92,47 @@ function ProjectDetail({ p, code, pin, onBack }) {
         </div>
       </div>
 
+      {/* work orders */}
+      {(p.tasks || []).length > 0 && (
+        <div className="mt-8">
+          <h3 className="kicker has-icon mb-4"><Icon name="clipboardcheck" className="w-4 h-4" /> Work orders</h3>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {p.tasks.map((t) => {
+              const c = TASK_HEX[t.status] || '#6b7280';
+              return (
+                <div key={t.id} className="panel p-4 flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: c }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-steel-100 leading-snug">{t.title}</p>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className="mono-label" style={{ color: c }}>{t.status}</span>
+                      {t.assignee && <span className="mono-label text-steel-500">· {t.assignee}</span>}
+                      {t.due && <span className="mono-label text-steel-500">· due {t.due}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* documents */}
+      {(p.documents || []).length > 0 && (
+        <div className="mt-8">
+          <h3 className="kicker has-icon mb-4"><Icon name="file" className="w-4 h-4" /> Documents</h3>
+          <div className="space-y-2">
+            {p.documents.map((d) => (
+              <div key={d.id} className="panel p-3.5 flex items-center gap-3">
+                <span className="grid place-items-center w-10 h-10 rounded bg-steel-800 text-red-500 shrink-0"><Icon name="file" className="w-5 h-5" /></span>
+                <div className="flex-1 min-w-0"><p className="text-sm text-steel-100 truncate">{d.name}</p><p className="mono-label text-steel-500">{d.kind} · {d.date}</p></div>
+                {d.url ? <a href={d.url} target="_blank" rel="noreferrer" className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="download" className="w-4 h-4" /> Open</a> : <span className="mono-label text-steel-500">On file</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* photos */}
       {(p.photos || []).length > 0 && (
         <div className="mt-8">
@@ -112,7 +154,9 @@ function ProjectDetail({ p, code, pin, onBack }) {
 
 function ClientPortal({ data, code, pin, onExit }) {
   const [sel, setSel] = useState(null);
+  const [filter, setFilter] = useState('all');
   const projects = data.projects || [];
+  const shownProjects = filter === 'all' ? projects : filter === 'completed' ? projects.filter((p) => p.status === 'Completed') : projects.filter((p) => p.status !== 'Completed');
   const active = projects.filter((p) => p.status === 'Active').length;
   const done = projects.filter((p) => p.status === 'Completed').length;
   const value = projects.reduce((a, p) => a + (p.budget || 0), 0);
@@ -155,8 +199,16 @@ function ClientPortal({ data, code, pin, onExit }) {
               </div>
             )}
 
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h2 className="font-display text-lg text-steel-50">Your projects</h2>
+              <div className="flex gap-2">
+                {[['all', 'All'], ['active', 'In progress'], ['completed', 'Completed']].map(([v, l]) => (
+                  <button key={v} onClick={() => setFilter(v)} className={`px-3 py-1.5 rounded-md font-mono text-[0.72rem] uppercase border transition-colors ${filter === v ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700 hover:border-steel-500'}`}>{l}</button>
+                ))}
+              </div>
+            </div>
             <div className="grid md:grid-cols-2 gap-4">
-              {projects.map((p) => (
+              {shownProjects.map((p) => (
                 <button key={p.id} onClick={() => setSel(p.id)} className="panel lift ticked p-5 text-left group">
                   <div className="flex items-center justify-between mb-3"><StatusBadge s={p.status} /><span className="mono-label text-steel-500">{p.type}</span></div>
                   <h3 className="font-display text-lg text-steel-50 group-hover:text-red-400 transition-colors">{p.title}</h3>
@@ -169,6 +221,7 @@ function ClientPortal({ data, code, pin, onExit }) {
                   </div>
                 </button>
               ))}
+              {!shownProjects.length && <p className="mono-label text-steel-500 md:col-span-2 py-10 text-center">No {filter === 'completed' ? 'completed' : filter === 'active' ? 'in-progress' : ''} projects.</p>}
             </div>
           </>
         )}
