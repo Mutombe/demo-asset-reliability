@@ -213,4 +213,18 @@ body { margin:0; font-family:var(--font-body); font-weight:400; color:var(--colo
 @keyframes ars-shimmer { 100% { transform: translateX(100%); } }
 .shimmer-row { position: relative; overflow: hidden; }
 .shimmer-row::after { content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(226,33,28,.10), transparent); animation: ars-shimmer 1.3s ease-in-out infinite; pointer-events:none; }
+/* ── ERP admin console: compact, denser type scale (smaller fonts) ── */
+.erp .text-xs   { font-size:.62rem;  line-height:.9rem; }
+.erp .text-sm   { font-size:.7rem;   line-height:1rem; }
+.erp .text-base { font-size:.78rem;  line-height:1.1rem; }
+.erp .text-lg   { font-size:.85rem;  line-height:1.12rem; }
+.erp .text-xl   { font-size:.95rem;  line-height:1.18rem; }
+.erp .text-2xl  { font-size:1.1rem;  line-height:1.25rem; }
+.erp .text-3xl  { font-size:1.35rem; line-height:1.35rem; }
+.erp .mono-label { font-size:.56rem; }
+.erp .field-label { font-size:.6rem; }
+.erp .input { font-size:.76rem; }
+.erp .btn { font-size:.74rem; }
+.erp .display-3 { font-size:1.25rem; }
+.erp .kicker { font-size:.62rem; }
 @media (prefers-reduced-motion: reduce) { *{animation-duration:.001ms!important;transition-duration:.001ms!important} html{scroll-behavior:auto} }

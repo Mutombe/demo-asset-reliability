@@ -766,7 +766,7 @@ function Console({ admin, onOut }) {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: '#f4f5f7' }}>
+    <div className="erp flex h-screen overflow-hidden" style={{ background: '#f4f5f7' }}>
       <aside className={`hidden lg:block shrink-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-60'}`}><Sidebar /></aside>
       <AnimatePresence>
         {drawer && (
