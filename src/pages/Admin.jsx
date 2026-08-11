@@ -613,7 +613,7 @@ function Catalogue() {
     `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(q.toLowerCase()) &&
     (filter === 'all' || p.status === filter)
   );
-  const pg = usePaged(shown, 10);
+  const pg = usePaged(shown, 6);
   const inStock = items.filter((p) => p.status === 'In stock').length;
   const low = items.filter((p) => p.status === 'Low').length;
   const out = items.filter((p) => p.status === 'Out of stock').length;
@@ -807,7 +807,7 @@ function MovementsLedger() {
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => { allMovements().then(setRows).catch((e) => toast.error(e.message)).finally(() => setLoaded(true)); }, []);
-  const pg = usePaged(rows, 12);
+  const pg = usePaged(rows, 8);
   if (!loaded) return <SkeletonTable rows={8} />;
   return (
     <>
