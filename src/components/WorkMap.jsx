@@ -36,8 +36,8 @@ export default function WorkMap({ pins = [], height = 420, className = '' }) {
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 200);
-    return () => { map.remove(); mapRef.current = null; };
+    const t = setTimeout(() => { if (mapRef.current === map) map.invalidateSize(); }, 200);
+    return () => { clearTimeout(t); map.remove(); mapRef.current = null; };
   }, []);
 
   useEffect(() => {
@@ -62,7 +62,8 @@ export default function WorkMap({ pins = [], height = 420, className = '' }) {
       const b = L.latLngBounds(valid.map((p) => [p.lat, p.lng]));
       map.fitBounds(b.pad(0.35), { maxZoom: 11 });
     }
-    setTimeout(() => map.invalidateSize(), 150);
+    const t = setTimeout(() => { if (mapRef.current === map) map.invalidateSize(); }, 150);
+    return () => clearTimeout(t);
   }, [pins]);
 
   return <div ref={elRef} className={className} style={{ height, width: '100%', borderRadius: 'var(--radius-md)', overflow: 'hidden', zIndex: 0 }} />;
