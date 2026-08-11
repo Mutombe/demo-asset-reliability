@@ -198,11 +198,22 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_PROJECT);
   const [emailing, setEmailing] = useState(false);
+  const mailtoCompose = () => {
+    const subject = encodeURIComponent('Your Asset Reliability Services project portal');
+    const body = encodeURIComponent(`Hello ${client.name},\n\nYou can now follow your projects with us online — live progress, work history, site photos, costs and reports.\n\nPortal link: ${portalLink(client.slug)}\nAccess PIN: ${client.pin}\n\n— Asset Reliability Services (Pvt) Ltd`);
+    window.location.href = `mailto:${client.email}?subject=${subject}&body=${body}`;
+  };
   const sendEmail = async () => {
     if (!client.email) { toast.error('Add an email address for this client first'); return; }
     setEmailing(true);
-    try { const r = await notifyClient(client.id, portalLink(client.slug)); toast.success(`Portal link emailed to ${r.to}`); }
-    catch (e) { toast.error(e.message); } finally { setEmailing(false); }
+    try {
+      const r = await notifyClient(client.id, portalLink(client.slug));
+      toast.success(`Portal link emailed to ${r.to}`);
+    } catch (e) {
+      // server mail unavailable (some hosts block outbound SMTP) → open the admin's mail app, prefilled
+      mailtoCompose();
+      toast('Opening your email app with the link + PIN ready to send');
+    } finally { setEmailing(false); }
   };
 
   const create = async () => {
