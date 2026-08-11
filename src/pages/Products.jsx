@@ -17,10 +17,10 @@ export function Stars({ value = 0, className = '' }) {
   return (
     <span className={`inline-flex items-center gap-1 ${className}`}>
       <span className="relative inline-flex">
-        <span className="inline-flex text-steel-700">{[0, 1, 2, 3, 4].map((i) => <Icon key={i} name="star" className="w-3.5 h-3.5" />)}</span>
-        <span className="absolute inset-0 inline-flex overflow-hidden text-amber-400" style={{ width: `${(value / 5) * 100}%` }}>{[0, 1, 2, 3, 4].map((i) => <Icon key={i} name="star" className="w-3.5 h-3.5 shrink-0" />)}</span>
+        <span className="inline-flex text-steel-700">{[0, 1, 2, 3, 4].map((i) => <Icon key={i} name="star" className="w-3 h-3 sm:w-3.5 sm:h-3.5" />)}</span>
+        <span className="absolute inset-0 inline-flex overflow-hidden text-amber-400" style={{ width: `${(value / 5) * 100}%` }}>{[0, 1, 2, 3, 4].map((i) => <Icon key={i} name="star" className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />)}</span>
       </span>
-      <span className="mono-label text-steel-400">{value.toFixed(1)}</span>
+      <span className="mono-label text-steel-400 hidden sm:inline">{value.toFixed(1)}</span>
     </span>
   );
 }
@@ -47,7 +47,7 @@ export function ProductCard({ p }) {
           className="w-full h-full object-cover img-rich transition-transform duration-[1.1s] group-hover:scale-105"
           style={{ maskImage: COVER_FADE, WebkitMaskImage: COVER_FADE }} />
         <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 flex flex-col items-start gap-1 sm:gap-1.5">
-          {p.tag && <span className="inline-flex items-center rounded-md sm:rounded-lg bg-red-500 text-white font-mono uppercase tracking-[0.05em] font-medium text-[0.55rem] sm:text-[0.66rem] px-1.5 sm:px-2.5 py-0.5 sm:py-1">{p.tag}</span>}
+          {p.tag && !/stock/i.test(p.tag) && <span className="inline-flex items-center rounded-md sm:rounded-lg bg-red-500 text-white font-mono uppercase tracking-[0.05em] font-medium text-[0.55rem] sm:text-[0.66rem] px-1.5 sm:px-2.5 py-0.5 sm:py-1">{p.tag}</span>}
           <span className="glass inline-flex items-center gap-1 sm:gap-1.5 rounded-md sm:rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1 font-mono text-[0.52rem] sm:text-[0.6rem] uppercase tracking-[0.05em] font-medium text-white"><span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full" style={{ background: out ? 'var(--color-crit)' : low ? 'var(--color-warn)' : 'var(--color-ok)' }} />{p.stock || 'In stock'}</span>
         </div>
         <span className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 grid place-items-center w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-2xl glass text-white"><Icon name={catIcon(p.cat)} className="w-4 h-4 sm:w-7 sm:h-7" /></span>
