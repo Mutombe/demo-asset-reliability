@@ -41,6 +41,30 @@ export const stockMovement = (id, body) => req(`/api/admin/products/${id}/moveme
 export const productMovements = (id) => req(`/api/admin/products/${id}/movements`, { auth: true });
 export const deleteProductApi = (id) => req(`/api/admin/products/${id}`, { method: 'DELETE', auth: true });
 
+/* ── suppliers ── */
+export const listSuppliers = () => req('/api/admin/suppliers', { auth: true });
+export const createSupplier = (b) => req('/api/admin/suppliers', { method: 'POST', body: b, auth: true });
+export const updateSupplier = (id, b) => req(`/api/admin/suppliers/${id}`, { method: 'PATCH', body: b, auth: true });
+export const deleteSupplier = (id) => req(`/api/admin/suppliers/${id}`, { method: 'DELETE', auth: true });
+
+/* ── purchase orders (reorder → receive) ── */
+export const listPOs = () => req('/api/admin/purchase-orders', { auth: true });
+export const createPO = (b) => req('/api/admin/purchase-orders', { method: 'POST', body: b, auth: true });
+export const updatePO = (id, b) => req(`/api/admin/purchase-orders/${id}`, { method: 'PATCH', body: b, auth: true });
+export const receivePO = (id) => req(`/api/admin/purchase-orders/${id}/receive`, { method: 'POST', auth: true });
+export const deletePO = (id) => req(`/api/admin/purchase-orders/${id}`, { method: 'DELETE', auth: true });
+export const allMovements = () => req('/api/admin/movements', { auth: true });
+
+/* ── project depth: tasks / documents / valuations ── */
+export const addTask = (pid, b) => req(`/api/admin/projects/${pid}/tasks`, { method: 'POST', body: b, auth: true });
+export const updateTask = (id, b) => req(`/api/admin/tasks/${id}`, { method: 'PATCH', body: b, auth: true });
+export const deleteTask = (id) => req(`/api/admin/tasks/${id}`, { method: 'DELETE', auth: true });
+export const addDoc = (pid, b) => req(`/api/admin/projects/${pid}/documents`, { method: 'POST', body: b, auth: true });
+export const deleteDoc = (id) => req(`/api/admin/documents/${id}`, { method: 'DELETE', auth: true });
+export const addValuation = (pid, b) => req(`/api/admin/projects/${pid}/valuations`, { method: 'POST', body: b, auth: true });
+export const updateValuation = (id, b) => req(`/api/admin/valuations/${id}`, { method: 'PATCH', body: b, auth: true });
+export const deleteValuation = (id) => req(`/api/admin/valuations/${id}`, { method: 'DELETE', auth: true });
+
 /* ── site content (CMS) ── */
 export const listContent = () => req('/api/admin/content', { auth: true });
 export const createContentApi = (body) => req('/api/admin/content', { method: 'POST', body, auth: true });

@@ -22,6 +22,9 @@ import {
   uploadPhoto, deletePhoto, notifyClient, adminReport, waLink, photoSrc,
   listProducts, createProductApi, updateProductApi, adjustStock, deleteProductApi,
   stockMovement, productMovements,
+  listSuppliers, createSupplier, updateSupplier, deleteSupplier,
+  listPOs, createPO, receivePO, updatePO, deletePO, allMovements,
+  addTask, updateTask, deleteTask, addDoc, deleteDoc, addValuation, updateValuation, deleteValuation,
   listContent, createContentApi, updateContentApi, deleteContentApi,
 } from '../api';
 
@@ -144,15 +147,35 @@ function ProjectManage({ project, onBack, reload }) {
     catch (err) { toast.error(err.message); } finally { setUpBusy(false); e.target.value = ''; }
   };
   const doDelPhoto = async (id) => { await deletePhoto(id); await refresh(); toast('Photo removed'); };
+  const [pmTab, setPmTab] = useState('overview');
+  const [tk, setTk] = useState({ title: '', assignee: '', status: 'To do', priority: 'Normal', due: '' });
+  const [dc, setDc] = useState({ name: '', url: '', kind: 'Document' });
+  const [vl, setVl] = useState({ ref: '', amount: '', status: 'Draft', note: '' });
+  const doTask = async () => { if (!tk.title) return; await addTask(p.id, tk); setTk({ title: '', assignee: '', status: 'To do', priority: 'Normal', due: '' }); await refresh(); toast.success('Task added'); };
+  const doTaskStatus = async (t, status) => { await updateTask(t.id, { status }); await refresh(); };
+  const doDelTask = async (id) => { await deleteTask(id); await refresh(); };
+  const doDoc = async () => { if (!dc.name) return; await addDoc(p.id, dc); setDc({ name: '', url: '', kind: 'Document' }); await refresh(); toast.success('Document added'); };
+  const doDelDoc = async (id) => { await deleteDoc(id); await refresh(); toast('Document removed'); };
+  const doVal = async () => { if (!vl.ref && !vl.amount) { toast.error('Add a ref or amount'); return; } await addValuation(p.id, { ...vl, amount: Number(vl.amount) || 0 }); setVl({ ref: '', amount: '', status: 'Draft', note: '' }); await refresh(); toast.success('Valuation added'); };
+  const doValStatus = async (v, status) => { await updateValuation(v.id, { status }); await refresh(); };
+  const doDelVal = async (id) => { await deleteValuation(id); await refresh(); };
   const [rep, setRep] = useState(false);
   const report = async () => { setRep(true); try { await adminReport(p.id, (p.title || 'project').replace(/\s+/g, '-').toLowerCase()); toast.success('Report downloaded'); } catch (e) { toast.error(e.message); } finally { setRep(false); } };
   const remove = async () => { await deleteProject(p.id); toast('Project deleted'); reload(); onBack(); };
 
+  const PM_TABS = [['overview', 'Overview'], ['tasks', 'Tasks'], ['milestones', 'Milestones'], ['diary', 'Site diary'], ['documents', 'Documents'], ['valuations', 'Valuations'], ['photos', 'Photos']];
+  const TASK_COLS = ['To do', 'In progress', 'Blocked', 'Done'];
+  const TASK_HEX = { 'To do': '#6b7280', 'In progress': '#e8930c', 'Blocked': '#e2211c', 'Done': '#1fae6b' };
+  const VAL_HEX = { Draft: '#6b7280', Submitted: '#e8930c', Certified: '#234f9e', Paid: '#1fae6b' };
+  const tasks = p.tasks || [], docs = p.documents || [], vals = p.valuations || [];
+  const certified = vals.filter((v) => v.status === 'Certified' || v.status === 'Paid').reduce((a, v) => a + v.amount, 0);
+  const counts = { tasks: tasks.length, documents: docs.length, valuations: vals.length, milestones: (p.milestones || []).length, photos: (p.photos || []).length, diary: (p.worklogs || []).length };
+
   return (
     <div>
-      <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400 mb-5"><Icon name="arrowLeft" className="w-4 h-4" /> Back to client</button>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h2 className="font-display text-xl text-steel-50">{p.title || 'Untitled project'}</h2>
+      <nav className="flex items-center gap-1.5 text-sm mb-4"><button onClick={onBack} className="inline-flex items-center gap-1.5 text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> Projects</button><Icon name="chevronRight" className="w-3.5 h-3.5 text-steel-600" /><span className="text-steel-100 truncate max-w-[40vw]">{p.title || 'Untitled'}</span></nav>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3"><StatusPill s={p.status} /><h2 className="font-display text-xl text-steel-50">{p.title || 'Untitled project'}</h2></div>
         <div className="flex gap-2">
           <button onClick={report} disabled={rep} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] disabled:opacity-60"><Icon name="download" className="w-4 h-4" /> {rep ? '…' : 'PDF'}</button>
           <button onClick={remove} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button>
@@ -160,56 +183,149 @@ function ProjectManage({ project, onBack, reload }) {
         </div>
       </div>
 
-      {/* editable fields */}
-      <div className="panel p-5 sm:p-6 grid sm:grid-cols-2 gap-4 mb-5">
-        <Field label="Title"><input className="input" value={p.title} onChange={(e) => set('title', e.target.value)} /></Field>
-        <Field label="Type of work"><input className="input" value={p.type} onChange={(e) => set('type', e.target.value)} /></Field>
-        <Field label="Status"><select className="input" value={p.status} onChange={(e) => set('status', e.target.value)}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>
-        <Field label={`Progress — ${p.progress}%`}><input type="range" min="0" max="100" value={p.progress} onChange={(e) => set('progress', e.target.value)} className="w-full accent-red-500" /></Field>
-        <Field label="Contract value (US$)"><input type="number" className="input" value={p.budget} onChange={(e) => set('budget', e.target.value)} /></Field>
-        <Field label="Spent to date (US$)"><input type="number" className="input" value={p.spent} onChange={(e) => set('spent', e.target.value)} /></Field>
-        <Field label="Start date"><input type="date" className="input" value={p.start_date} onChange={(e) => set('start_date', e.target.value)} /></Field>
-        <Field label="Due date"><input type="date" className="input" value={p.due_date} onChange={(e) => set('due_date', e.target.value)} /></Field>
-        <Field label="Location"><input className="input" value={p.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. Zvishavane" /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Latitude"><input className="input" value={p.lat ?? ''} onChange={(e) => set('lat', e.target.value)} placeholder="-20.33" /></Field>
-          <Field label="Longitude"><input className="input" value={p.lng ?? ''} onChange={(e) => set('lng', e.target.value)} placeholder="30.07" /></Field>
-        </div>
-        <div className="sm:col-span-2"><Field label="Description"><textarea className="input min-h-[80px]" value={p.description} onChange={(e) => set('description', e.target.value)} /></Field></div>
+      <div className="flex gap-1 mb-5 border-b border-[#e7e9ee] overflow-x-auto no-scrollbar">
+        {PM_TABS.map(([id, lbl]) => (
+          <button key={id} onClick={() => setPmTab(id)} className={`shrink-0 px-3.5 py-2.5 font-display text-sm border-b-2 -mb-px transition-colors ${pmTab === id ? 'border-red-500 text-steel-50' : 'border-transparent text-steel-400 hover:text-steel-100'}`}>{lbl}{counts[id] ? <span className="ml-1.5 text-steel-500">{counts[id]}</span> : ''}</button>
+        ))}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-5">
-        {/* milestones */}
-        <div className="panel p-5">
-          <h3 className="font-display text-steel-50 mb-3">Milestones</h3>
-          <ul className="space-y-2 mb-3">
+      {pmTab === 'overview' && (
+        <div className="panel p-5 sm:p-6 grid sm:grid-cols-2 gap-4">
+          <Field label="Title"><input className="input" value={p.title} onChange={(e) => set('title', e.target.value)} /></Field>
+          <Field label="Type of work"><input className="input" value={p.type} onChange={(e) => set('type', e.target.value)} /></Field>
+          <Field label="Status"><select className="input" value={p.status} onChange={(e) => set('status', e.target.value)}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>
+          <Field label={`Progress — ${p.progress}%`}><input type="range" min="0" max="100" value={p.progress} onChange={(e) => set('progress', e.target.value)} className="w-full accent-red-500" /></Field>
+          <Field label="Contract value (US$)"><input type="number" className="input" value={p.budget} onChange={(e) => set('budget', e.target.value)} /></Field>
+          <Field label="Spent to date (US$)"><input type="number" className="input" value={p.spent} onChange={(e) => set('spent', e.target.value)} /></Field>
+          <Field label="Start date"><input type="date" className="input" value={p.start_date} onChange={(e) => set('start_date', e.target.value)} /></Field>
+          <Field label="Due date"><input type="date" className="input" value={p.due_date} onChange={(e) => set('due_date', e.target.value)} /></Field>
+          <Field label="Location"><input className="input" value={p.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. Zvishavane" /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Latitude"><input className="input" value={p.lat ?? ''} onChange={(e) => set('lat', e.target.value)} placeholder="-20.33" /></Field>
+            <Field label="Longitude"><input className="input" value={p.lng ?? ''} onChange={(e) => set('lng', e.target.value)} placeholder="30.07" /></Field>
+          </div>
+          <div className="sm:col-span-2"><Field label="Description"><textarea className="input min-h-[80px]" value={p.description} onChange={(e) => set('description', e.target.value)} /></Field></div>
+        </div>
+      )}
+
+      {pmTab === 'tasks' && (
+        <>
+          <div className="panel p-4 mb-4 grid sm:grid-cols-[2fr_1fr_1fr_auto_auto] gap-2 items-end">
+            <Field label="Task"><input className="input !py-2" value={tk.title} onChange={(e) => setTk({ ...tk, title: e.target.value })} placeholder="What needs doing" /></Field>
+            <Field label="Assignee"><input className="input !py-2" value={tk.assignee} onChange={(e) => setTk({ ...tk, assignee: e.target.value })} /></Field>
+            <Field label="Due"><input type="date" className="input !py-2" value={tk.due} onChange={(e) => setTk({ ...tk, due: e.target.value })} /></Field>
+            <Field label="Priority"><select className="input !py-2" value={tk.priority} onChange={(e) => setTk({ ...tk, priority: e.target.value })}>{['Low', 'Normal', 'High'].map((x) => <option key={x}>{x}</option>)}</select></Field>
+            <button onClick={doTask} className="btn btn-red !py-2.5"><Icon name="plus" className="w-4 h-4" /> Add</button>
+          </div>
+          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {TASK_COLS.map((col) => (
+              <div key={col} className="panel-800 p-3 min-h-[8rem]">
+                <div className="flex items-center gap-2 mb-2.5 px-1"><span className="w-2 h-2 rounded-full" style={{ background: TASK_HEX[col] }} /><span className="mono-label text-steel-400">{col}</span><span className="mono-label text-steel-500 ml-auto">{tasks.filter((t) => t.status === col).length}</span></div>
+                <div className="space-y-2">
+                  <AnimatePresence initial={false}>
+                    {tasks.filter((t) => t.status === col).map((t) => (
+                      <motion.div key={t.id} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} className="panel p-3">
+                        <div className="flex items-start justify-between gap-2"><p className="text-sm text-steel-100 leading-snug">{t.title}</p><button onClick={() => doDelTask(t.id)} className="text-steel-500 hover:text-red-400 shrink-0"><Icon name="x" className="w-3.5 h-3.5" /></button></div>
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          {t.priority === 'High' && <span className="mono-label" style={{ color: 'var(--color-crit)' }}>High</span>}
+                          {t.assignee && <span className="mono-label text-steel-500">{t.assignee}</span>}
+                          {t.due && <span className="mono-label text-steel-500">· {t.due}</span>}
+                        </div>
+                        <select value={t.status} onChange={(e) => doTaskStatus(t, e.target.value)} className="input !py-1 !px-2 text-[0.72rem] mt-2 w-full">{TASK_COLS.map((c) => <option key={c}>{c}</option>)}</select>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {pmTab === 'milestones' && (
+        <div className="panel p-5 max-w-2xl">
+          <ul className="space-y-2 mb-4">
             {(p.milestones || []).map((m) => (
               <li key={m.id} className="flex items-center gap-3"><button onClick={() => doToggle(m)} className={`grid place-items-center w-5 h-5 rounded-full shrink-0 ${m.done ? 'bg-[color:var(--color-ok)] text-white' : 'bg-steel-800 text-steel-500 hover:text-red-400'}`}><Icon name="check" className="w-3 h-3" /></button><span className={`text-sm flex-1 ${m.done ? 'text-steel-300 line-through' : 'text-steel-200'}`}>{m.title}</span><span className="mono-label text-steel-500">{m.due}</span></li>
             ))}
+            {!(p.milestones || []).length && <p className="mono-label text-steel-500">No milestones yet.</p>}
           </ul>
           <div className="flex gap-2"><input className="input !py-2 flex-1" placeholder="Milestone" value={ml.title} onChange={(e) => setMl({ ...ml, title: e.target.value })} /><input type="date" className="input !py-2 w-36" value={ml.due} onChange={(e) => setMl({ ...ml, due: e.target.value })} /><button onClick={doMilestone} className="btn btn-red !py-2 !px-3"><Icon name="plus" className="w-4 h-4" /></button></div>
         </div>
-        {/* worklogs */}
-        <div className="panel p-5">
-          <h3 className="font-display text-steel-50 mb-3">Work history</h3>
-          <ol className="space-y-3 mb-3 max-h-56 overflow-y-auto">
+      )}
+
+      {pmTab === 'diary' && (
+        <div className="panel p-5 max-w-2xl">
+          <ol className="space-y-3 mb-4 max-h-[26rem] overflow-y-auto">
             {(p.worklogs || []).map((w) => (<li key={w.id} className="border-l-2 border-red-500 pl-3"><p className="mono-label text-red-400">{w.date} · {w.status}</p><p className="text-sm text-steel-100">{w.title}</p>{w.note && <p className="text-sm text-steel-400">{w.note}</p>}</li>))}
+            {!(p.worklogs || []).length && <p className="mono-label text-steel-500">No site-diary entries yet.</p>}
           </ol>
           <div className="space-y-2">
             <div className="flex gap-2"><input type="date" className="input !py-2 w-36" value={wl.date} onChange={(e) => setWl({ ...wl, date: e.target.value })} /><input className="input !py-2 flex-1" placeholder="Update title" value={wl.title} onChange={(e) => setWl({ ...wl, title: e.target.value })} /></div>
             <div className="flex gap-2"><input className="input !py-2 flex-1" placeholder="Note" value={wl.note} onChange={(e) => setWl({ ...wl, note: e.target.value })} /><button onClick={doWorklog} className="btn btn-red !py-2 !px-3"><Icon name="plus" className="w-4 h-4" /></button></div>
           </div>
         </div>
-        {/* photos */}
-        <div className="panel p-5 lg:col-span-2">
-          <h3 className="font-display text-steel-50 mb-3">Site photos</h3>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+      )}
+
+      {pmTab === 'documents' && (
+        <div className="panel p-5 max-w-3xl">
+          <div className="space-y-2 mb-4">
+            {docs.map((d) => (
+              <div key={d.id} className="flex items-center gap-3 panel-800 p-3">
+                <span className="grid place-items-center w-9 h-9 rounded bg-steel-800 text-red-500 shrink-0"><Icon name="file" className="w-5 h-5" /></span>
+                <div className="flex-1 min-w-0"><p className="text-sm text-steel-100 truncate">{d.name}</p><p className="mono-label text-steel-500">{d.kind} · {d.date}</p></div>
+                {d.url && <a href={d.url} target="_blank" rel="noreferrer" className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">Open</a>}
+                <button onClick={() => doDelDoc(d.id)} className="text-steel-500 hover:text-red-400"><Icon name="x" className="w-4 h-4" /></button>
+              </div>
+            ))}
+            {!docs.length && <p className="mono-label text-steel-500">No documents yet.</p>}
+          </div>
+          <div className="grid sm:grid-cols-[2fr_1fr_2fr_auto] gap-2 items-end">
+            <Field label="Name"><input className="input !py-2" value={dc.name} onChange={(e) => setDc({ ...dc, name: e.target.value })} /></Field>
+            <Field label="Kind"><select className="input !py-2" value={dc.kind} onChange={(e) => setDc({ ...dc, kind: e.target.value })}>{['Document', 'Report', 'Certificate', 'Drawing', 'Photo'].map((k) => <option key={k}>{k}</option>)}</select></Field>
+            <Field label="Link (optional)"><input className="input !py-2" value={dc.url} onChange={(e) => setDc({ ...dc, url: e.target.value })} placeholder="https://…" /></Field>
+            <button onClick={doDoc} className="btn btn-red !py-2.5"><Icon name="plus" className="w-4 h-4" /></button>
+          </div>
+        </div>
+      )}
+
+      {pmTab === 'valuations' && (
+        <div className="panel p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div><p className="mono-label text-steel-500">Certified / paid to date</p><p className="font-display text-2xl text-steel-50 tabnum">{money(certified)}</p></div>
+            <p className="text-sm text-steel-400">of {money(p.budget)} contract</p>
+          </div>
+          <div className="space-y-2 mb-4">
+            {vals.map((v) => (
+              <div key={v.id} className="flex flex-wrap items-center gap-3 panel-800 p-3">
+                <div className="min-w-[7rem]"><p className="font-mono text-sm text-red-400">{v.ref || '—'}</p><p className="mono-label text-steel-500">{v.date}</p></div>
+                <p className="font-display text-lg text-steel-50 tabnum">{money(v.amount)}</p>
+                <span className="text-sm text-steel-400 flex-1 truncate">{v.note}</span>
+                <select value={v.status} onChange={(e) => doValStatus(v, e.target.value)} className="input !py-1 !px-2 text-[0.72rem] w-32" style={{ color: VAL_HEX[v.status] }}>{['Draft', 'Submitted', 'Certified', 'Paid'].map((s) => <option key={s}>{s}</option>)}</select>
+                <button onClick={() => doDelVal(v.id)} className="text-steel-500 hover:text-red-400"><Icon name="x" className="w-4 h-4" /></button>
+              </div>
+            ))}
+            {!vals.length && <p className="mono-label text-steel-500">No valuations raised yet.</p>}
+          </div>
+          <div className="grid sm:grid-cols-[1fr_1fr_2fr_auto] gap-2 items-end">
+            <Field label="Ref"><input className="input !py-2" value={vl.ref} onChange={(e) => setVl({ ...vl, ref: e.target.value })} placeholder="VAL-003" /></Field>
+            <Field label="Amount (US$)"><input type="number" className="input !py-2" value={vl.amount} onChange={(e) => setVl({ ...vl, amount: e.target.value })} /></Field>
+            <Field label="Note"><input className="input !py-2" value={vl.note} onChange={(e) => setVl({ ...vl, note: e.target.value })} /></Field>
+            <button onClick={doVal} className="btn btn-red !py-2.5"><Icon name="plus" className="w-4 h-4" /></button>
+          </div>
+        </div>
+      )}
+
+      {pmTab === 'photos' && (
+        <div className="panel p-5">
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2 mb-4">
             {(p.photos || []).map((x) => (
               <figure key={x.id} className="cover-frame aspect-square relative group">
                 <img src={photoSrc(x.url)} alt={x.caption} className="absolute inset-0 w-full h-full object-cover duotone" />
                 <button onClick={() => doDelPhoto(x.id)} className="absolute top-1 right-1 grid place-items-center w-6 h-6 rounded bg-steel-950/70 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition"><Icon name="x" className="w-3.5 h-3.5" /></button>
               </figure>
             ))}
+            {!(p.photos || []).length && <p className="mono-label text-steel-500 col-span-full py-4">No site photos yet.</p>}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             <input className="input !py-2 w-40" placeholder="Caption (optional)" value={ph.caption} onChange={(e) => setPh({ ...ph, caption: e.target.value })} />
@@ -222,7 +338,7 @@ function ProjectManage({ project, onBack, reload }) {
             <button onClick={doPhoto} className="btn btn-ghost !py-2 !px-3">Add URL</button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -348,6 +464,8 @@ function ProductManage({ product, onBack, reload }) {
   const [saving, setSaving] = useState(false);
   const [moves, setMoves] = useState([]);
   const [mLoaded, setMLoaded] = useState(false);
+  const [sups, setSups] = useState([]);
+  useEffect(() => { listSuppliers().then(setSups).catch(() => {}); }, []);
   const [mv, setMv] = useState({ kind: 'Receive', qty: '', reason: '', ref: '' });
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
 
@@ -398,6 +516,9 @@ function ProductManage({ product, onBack, reload }) {
             <Field label="SKU"><input className="input font-mono" value={p.sku} onChange={(e) => set('sku', e.target.value)} /></Field>
             <Field label="Category"><input className="input" value={p.category} onChange={(e) => set('category', e.target.value)} /></Field>
             <Field label="Warehouse / location"><input className="input" value={p.location} onChange={(e) => set('location', e.target.value)} /></Field>
+            <Field label="Supplier"><select className="input" value={p.supplier_id || ''} onChange={(e) => set('supplier_id', e.target.value ? Number(e.target.value) : null)}><option value="">— none —</option>{sups.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}</select></Field>
+            <Field label="Unit"><select className="input" value={p.unit || 'each'} onChange={(e) => set('unit', e.target.value)}>{['each', 'box', 'set', 'm', 'kg', 'litre', 'roll'].map((u) => <option key={u}>{u}</option>)}</select></Field>
+            <Field label="Barcode"><input className="input font-mono" value={p.barcode || ''} onChange={(e) => set('barcode', e.target.value)} placeholder="EAN / QR" /></Field>
             <Field label="Sell price (US$)"><input type="number" className="input" value={p.price} onChange={(e) => set('price', e.target.value)} /></Field>
             <Field label="Unit cost (US$)"><input type="number" className="input" value={p.cost} onChange={(e) => set('cost', e.target.value)} /></Field>
             <Field label="Reorder point"><input type="number" className="input" value={p.reorder} onChange={(e) => set('reorder', e.target.value)} /></Field>
@@ -444,7 +565,7 @@ function ProductManage({ product, onBack, reload }) {
   );
 }
 
-function Inventory() {
+function Catalogue() {
   const [items, setItems] = useState(cache.products || []);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
@@ -544,6 +665,187 @@ function Inventory() {
         {loaded && shown.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products{q || filter !== 'all' ? ' match your filter' : ' yet'}.</p>}
       </div>
       <p className="mono-label text-steel-500 mt-3">Open a product to edit the shop listing and record warehouse movements. “Live” = visible in the public shop.</p>
+    </>
+  );
+}
+
+/* ── SUPPLIERS ── */
+const EMPTY_SUP = { name: '', contact: '', email: '', phone: '', lead_time: 7, terms: '', active: true };
+function Suppliers() {
+  const [items, setItems] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(EMPTY_SUP);
+  const load = useCallback(async () => { try { setItems(await listSuppliers()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const create = async () => {
+    if (!form.name) { toast.error('Supplier needs a name'); return; }
+    const tmp = { ...form, id: 'tmp-' + Date.now(), _pending: true, productCount: 0 };
+    setItems((x) => [tmp, ...x]); setForm(EMPTY_SUP); setAdding(false);
+    try { const s = await createSupplier({ ...form, lead_time: Number(form.lead_time) || 0 }); setItems((x) => x.map((i) => (i.id === tmp.id ? { ...s, productCount: 0 } : i))); toast.success('Supplier added'); }
+    catch (e) { setItems((x) => x.filter((i) => i.id !== tmp.id)); toast.error(e.message); }
+  };
+  const del = async (id) => { const snap = items; setItems((x) => x.filter((i) => i.id !== id)); toast('Supplier removed'); try { await deleteSupplier(id); } catch (e) { setItems(snap); toast.error(e.message); } };
+  if (!loaded) return <SkeletonCards n={4} />;
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4"><p className="text-sm text-steel-400">{items.length} supplier{items.length !== 1 ? 's' : ''}</p><button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'New supplier'}</button></div>
+      {adding && (
+        <div className="panel p-5 mb-4 grid sm:grid-cols-3 gap-3">
+          <Field label="Name"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+          <Field label="Contact person"><input className="input" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} /></Field>
+          <Field label="Email"><input className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Phone"><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+          <Field label="Lead time (days)"><input type="number" className="input" value={form.lead_time} onChange={(e) => setForm({ ...form, lead_time: e.target.value })} /></Field>
+          <Field label="Payment terms"><input className="input" value={form.terms} onChange={(e) => setForm({ ...form, terms: e.target.value })} placeholder="Net 30" /></Field>
+          <div className="sm:col-span-3"><button onClick={create} className="btn btn-red">Add supplier</button></div>
+        </div>
+      )}
+      <motion.div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" variants={listV} initial="hidden" animate="show">
+        <AnimatePresence initial={false}>
+          {items.map((sp) => (
+            <motion.div key={sp.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96 }} className={`panel p-5 ${sp._pending ? 'shimmer-row opacity-70' : ''}`}>
+              <div className="flex items-start justify-between"><div className="min-w-0"><h3 className="font-display text-lg text-steel-50 truncate">{sp.name}</h3><p className="text-sm text-steel-400 mt-0.5">{sp.contact || '—'}</p></div><span className="mono-label text-steel-500 shrink-0">{sp.productCount} SKU</span></div>
+              <div className="mt-3 space-y-1 text-sm text-steel-400">
+                {sp.email && <p className="inline-flex items-center gap-1.5"><Icon name="mail" className="w-3.5 h-3.5" /> {sp.email}</p>}
+                {sp.phone && <p className="inline-flex items-center gap-1.5"><Icon name="phone" className="w-3.5 h-3.5" /> {sp.phone}</p>}
+              </div>
+              <div className="flex items-center justify-between mt-4 panel-800 p-2.5">
+                <div><p className="mono-label text-steel-500">Lead time</p><p className="font-mono text-steel-100">{sp.lead_time} days</p></div>
+                <div className="text-right"><p className="mono-label text-steel-500">Terms</p><p className="font-mono text-steel-100">{sp.terms || '—'}</p></div>
+              </div>
+              {!sp._pending && <button onClick={() => del(sp.id)} className="btn btn-ghost w-full !py-2 mt-3 text-[0.78rem] hover:!text-red-500">Remove</button>}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
+    </>
+  );
+}
+
+/* ── MOVEMENTS LEDGER (global) ── */
+function MovementsLedger() {
+  const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { allMovements().then(setRows).catch((e) => toast.error(e.message)).finally(() => setLoaded(true)); }, []);
+  if (!loaded) return <SkeletonTable rows={8} />;
+  return (
+    <div className="panel overflow-hidden">
+      <div className="hidden md:grid grid-cols-[1.6fr_1fr_0.8fr_1fr_1.4fr] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Movement</span><span>Qty</span><span>Balance</span><span>Reason</span></div>
+      {rows.map((m) => (
+        <div key={m.id} className="grid grid-cols-2 md:grid-cols-[1.6fr_1fr_0.8fr_1fr_1.4fr] gap-3 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center">
+          <div className="min-w-0"><p className="text-sm text-steel-100 truncate">{m.product}</p><p className="font-mono text-[0.66rem] text-steel-500">{m.sku} · {m.date}</p></div>
+          <span className="text-sm text-steel-300 hidden md:block">{m.kind}</span>
+          <span className="font-mono text-sm tabnum justify-self-end md:justify-self-auto" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)' }}>{m.qty >= 0 ? '+' : ''}{m.qty}</span>
+          <span className="font-mono text-sm text-steel-200 hidden md:block">{m.balance}</span>
+          <span className="text-sm text-steel-400 truncate hidden md:block">{m.reason}{m.ref ? ` · ${m.ref}` : ''}</span>
+        </div>
+      ))}
+      {loaded && !rows.length && <p className="mono-label text-steel-500 py-12 text-center">No stock movements yet.</p>}
+    </div>
+  );
+}
+
+/* ── PURCHASE ORDERS (reorder → receive) ── */
+const PO_STATUS_HEX = { Draft: '#6b7280', Sent: '#e8930c', Received: '#1fae6b', Cancelled: '#e2211c' };
+function PurchaseOrders() {
+  const [pos, setPos] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState({ supplier_id: '', lines: [] });
+  const load = useCallback(async () => {
+    try { const [p, pr, su] = await Promise.all([listPOs(), listProducts(), listSuppliers()]); setPos(p); setProducts(pr); setSuppliers(su); }
+    catch (e) { toast.error(e.message); } finally { setLoaded(true); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const startReorder = () => {
+    const low = products.filter((p) => p.status !== 'In stock');
+    setDraft({ supplier_id: low[0]?.supplier_id || suppliers[0]?.id || '', lines: low.map((p) => ({ product_id: p.id, name: p.name, qty: Math.max(p.reorder * 2 - p.stock, p.reorder), cost: p.cost })) });
+    setCreating(true);
+  };
+  const setLine = (i, k, v) => setDraft((d) => ({ ...d, lines: d.lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)) }));
+  const rmLine = (i) => setDraft((d) => ({ ...d, lines: d.lines.filter((_, j) => j !== i) }));
+  const submitPO = async () => {
+    if (!draft.lines.length) { toast.error('Add at least one line'); return; }
+    try { await createPO({ supplier_id: draft.supplier_id ? Number(draft.supplier_id) : null, lines: draft.lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty) || 0, cost: Number(l.cost) || 0 })) }); setCreating(false); setDraft({ supplier_id: '', lines: [] }); await load(); toast.success('Purchase order raised'); }
+    catch (e) { toast.error(e.message); }
+  };
+  const receive = async (id) => { try { await receivePO(id); await load(); toast.success('Received — stock updated'); } catch (e) { toast.error(e.message); } };
+  const send = async (id) => { try { await updatePO(id, { status: 'Sent' }); await load(); toast('Marked as sent'); } catch (e) { toast.error(e.message); } };
+  const del = async (id) => { const snap = pos; setPos((x) => x.filter((p) => p.id !== id)); try { await deletePO(id); } catch (e) { setPos(snap); toast.error(e.message); } };
+
+  if (!loaded) return <SkeletonTable rows={5} />;
+  return (
+    <>
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+        <p className="text-sm text-steel-400">{pos.length} order{pos.length !== 1 ? 's' : ''}</p>
+        <div className="flex gap-2">
+          <button onClick={startReorder} className="btn btn-ghost !py-2.5"><Icon name="bell" className="w-4 h-4" /> Reorder low stock</button>
+          <button onClick={() => { setDraft({ supplier_id: suppliers[0]?.id || '', lines: [] }); setCreating(true); }} className="btn btn-red !py-2.5"><Icon name="plus" className="w-4 h-4" /> New PO</button>
+        </div>
+      </div>
+      {creating && (
+        <div className="panel p-5 mb-4">
+          <div className="flex items-center justify-between mb-3"><h3 className="font-display text-steel-50">New purchase order</h3><button onClick={() => setCreating(false)} className="text-steel-500 hover:text-red-400"><Icon name="x" className="w-4 h-4" /></button></div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <Field label="Supplier"><select className="input" value={draft.supplier_id} onChange={(e) => setDraft({ ...draft, supplier_id: e.target.value })}><option value="">— none —</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+            <div className="flex items-end"><select className="input" onChange={(e) => { const p = products.find((x) => x.id === Number(e.target.value)); if (p && !draft.lines.some((l) => l.product_id === p.id)) setDraft((d) => ({ ...d, lines: [...d.lines, { product_id: p.id, name: p.name, qty: p.reorder, cost: p.cost }] })); e.target.value = ''; }} defaultValue=""><option value="">+ Add product line…</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+          </div>
+          <div className="space-y-2 mb-3">
+            {draft.lines.map((l, i) => (
+              <div key={i} className="flex items-center gap-2 panel-800 p-2.5">
+                <span className="text-sm text-steel-100 flex-1 truncate">{l.name}</span>
+                <label className="mono-label text-steel-500">Qty</label><input type="number" className="input !py-1.5 w-20" value={l.qty} onChange={(e) => setLine(i, 'qty', e.target.value)} />
+                <label className="mono-label text-steel-500">Cost</label><input type="number" className="input !py-1.5 w-24" value={l.cost} onChange={(e) => setLine(i, 'cost', e.target.value)} />
+                <button onClick={() => rmLine(i)} className="text-steel-500 hover:text-red-400"><Icon name="x" className="w-4 h-4" /></button>
+              </div>
+            ))}
+            {!draft.lines.length && <p className="mono-label text-steel-500 py-2">Add product lines above, or use “Reorder low stock”.</p>}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-sm text-steel-100">Total US$ {draft.lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0).toLocaleString()}</span>
+            <button onClick={submitPO} className="btn btn-red">Raise PO</button>
+          </div>
+        </div>
+      )}
+      <div className="space-y-3">
+        {pos.map((po) => (
+          <div key={po.id} className="panel p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><div className="flex items-center gap-2"><p className="font-mono text-sm text-red-400">{po.ref}</p><span className="inline-flex items-center gap-1.5 font-mono text-[0.66rem] uppercase px-2 py-0.5 rounded" style={{ color: PO_STATUS_HEX[po.status], background: `${PO_STATUS_HEX[po.status]}18` }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: PO_STATUS_HEX[po.status] }} /> {po.status}</span></div><p className="text-sm text-steel-300 mt-1">{po.supplier || 'No supplier'} · {po.lines.length} line{po.lines.length !== 1 ? 's' : ''} · {po.date}</p></div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-steel-100">US$ {po.total.toLocaleString()}</span>
+                {po.status === 'Draft' && <button onClick={() => send(po.id)} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]">Mark sent</button>}
+                {po.status !== 'Received' && po.status !== 'Cancelled' && <button onClick={() => receive(po.id)} className="btn btn-red !py-2 !px-3 text-[0.78rem]">Receive</button>}
+                <button onClick={() => del(po.id)} className="text-steel-500 hover:text-red-400"><Icon name="x" className="w-4 h-4" /></button>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-steel-800 grid sm:grid-cols-2 gap-x-6 gap-y-1">
+              {po.lines.map((l) => (<div key={l.id} className="flex items-center justify-between text-sm"><span className="text-steel-300 truncate">{l.qty} × {l.name}</span><span className="font-mono text-steel-500">US$ {(l.qty * l.cost).toLocaleString()}</span></div>))}
+            </div>
+          </div>
+        ))}
+        {!pos.length && <p className="mono-label text-steel-500 py-12 text-center">No purchase orders. Use “Reorder low stock” to raise one.</p>}
+      </div>
+    </>
+  );
+}
+
+/* ── INVENTORY MODULE: tabbed (Catalogue / Movements / Suppliers / Purchase orders) ── */
+const INV_TABS = [['catalogue', 'Catalogue'], ['movements', 'Movements'], ['suppliers', 'Suppliers'], ['pos', 'Purchase orders']];
+function InventoryModule() {
+  const [t, setT] = useState('catalogue');
+  return (
+    <>
+      <div className="flex gap-1 mb-5 border-b border-[#e7e9ee] overflow-x-auto no-scrollbar">
+        {INV_TABS.map(([id, lbl]) => (
+          <button key={id} onClick={() => setT(id)} className={`shrink-0 px-4 py-2.5 font-display text-sm border-b-2 -mb-px transition-colors ${t === id ? 'border-red-500 text-steel-50' : 'border-transparent text-steel-400 hover:text-steel-100'}`}>{lbl}</button>
+        ))}
+      </div>
+      {t === 'catalogue' ? <Catalogue /> : t === 'movements' ? <MovementsLedger /> : t === 'suppliers' ? <Suppliers /> : <PurchaseOrders />}
     </>
   );
 }
@@ -811,7 +1113,7 @@ function Console({ admin, onOut }) {
             </>
             )
           ) : tab === 'inventory' ? (
-            <Inventory />
+            <InventoryModule />
           ) : tab === 'site' ? (
             <SiteManagement />
           ) : (

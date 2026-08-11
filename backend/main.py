@@ -132,6 +132,9 @@ class Product(SQLModel, table=True):
     stock: int = 0
     reorder: int = 5
     location: str = "Main Warehouse"
+    unit: str = "each"
+    barcode: str = ""
+    supplier_id: Optional[int] = Field(default=None, foreign_key="ars_supplier.id")
     image: str = ""
     active: bool = True
     created_at: str = Field(default_factory=lambda: dt.date.today().isoformat())
@@ -140,12 +143,71 @@ class StockMovement(SQLModel, table=True):
     __tablename__ = "ars_movement"
     id: Optional[int] = Field(default=None, primary_key=True)
     product_id: int = Field(index=True, foreign_key="ars_product.id")
-    kind: str = "Adjust"          # Receive | Issue | Adjust
+    kind: str = "Adjust"          # Receive | Issue | Adjust | Transfer
     qty: int = 0                  # signed change actually applied
     balance: int = 0             # stock after the movement
     reason: str = ""
     ref: str = ""
     date: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class Supplier(SQLModel, table=True):
+    __tablename__ = "ars_supplier"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    contact: str = ""
+    email: str = ""
+    phone: str = ""
+    lead_time: int = 7            # days
+    terms: str = ""               # e.g. "Net 30"
+    active: bool = True
+    created_at: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class PurchaseOrder(SQLModel, table=True):
+    __tablename__ = "ars_po"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ref: str = ""
+    supplier_id: Optional[int] = Field(default=None, foreign_key="ars_supplier.id")
+    status: str = "Draft"         # Draft | Sent | Received | Cancelled
+    notes: str = ""
+    created_at: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class POLine(SQLModel, table=True):
+    __tablename__ = "ars_po_line"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    po_id: int = Field(index=True, foreign_key="ars_po.id")
+    product_id: int = Field(foreign_key="ars_product.id")
+    qty: int = 0
+    cost: float = 0
+
+# ── project depth ──
+class ProjectTask(SQLModel, table=True):
+    __tablename__ = "ars_task"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="ars_project.id")
+    title: str = ""
+    assignee: str = ""
+    status: str = "To do"         # To do | In progress | Blocked | Done
+    priority: str = "Normal"      # Low | Normal | High
+    due: str = ""
+
+class ProjectDoc(SQLModel, table=True):
+    __tablename__ = "ars_doc"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="ars_project.id")
+    name: str = ""
+    url: str = ""
+    kind: str = "Document"        # Report | Certificate | Drawing | Photo | Document
+    date: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class Valuation(SQLModel, table=True):
+    __tablename__ = "ars_valuation"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="ars_project.id")
+    ref: str = ""
+    amount: float = 0
+    status: str = "Draft"         # Draft | Submitted | Certified | Paid
+    date: str = Field(default_factory=lambda: dt.date.today().isoformat())
+    note: str = ""
 
 class SiteContent(SQLModel, table=True):
     __tablename__ = "ars_content"
@@ -208,6 +270,9 @@ def project_dict(s: Session, p: Project, deep=True):
         d["worklogs"] = sorted([w.model_dump() for w in logs], key=lambda x: x["date"], reverse=True)
         d["milestones"] = [m.model_dump() for m in mils]
         d["photos"] = [photo_out(ph) for ph in pics]
+        d["tasks"] = [task_out(t) for t in s.exec(select(ProjectTask).where(ProjectTask.project_id == p.id)).all()]
+        d["documents"] = [doc_out(x) for x in s.exec(select(ProjectDoc).where(ProjectDoc.project_id == p.id)).all()]
+        d["valuations"] = sorted([val_out(v) for v in s.exec(select(Valuation).where(Valuation.project_id == p.id)).all()], key=lambda x: x["date"], reverse=True)
     return d
 
 def client_dict(s: Session, c: Client, deep=False):
@@ -232,6 +297,9 @@ def migrate():
         "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS blurb VARCHAR DEFAULT ''",
         "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION DEFAULT 0",
         "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS location VARCHAR DEFAULT 'Main Warehouse'",
+        "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS unit VARCHAR DEFAULT 'each'",
+        "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS barcode VARCHAR DEFAULT ''",
+        "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS supplier_id INTEGER",
     ]
     with engine.begin() as conn:
         for st in stmts:
@@ -253,6 +321,10 @@ def on_startup():
             seed_products(s)
         if not s.exec(select(SiteContent)).first():
             seed_content(s)
+        if not s.exec(select(Supplier)).first():
+            seed_suppliers(s)
+        if not s.exec(select(ProjectTask)).first():
+            seed_project_depth(s)
 
 @app.get("/")
 def root():
@@ -666,6 +738,97 @@ def client_report(body: ReportReq):
         pdf = build_report(c.name, project_dict(s, p), photo_blobs(s, body.project_id))
         return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="ARS-report-{p.id}.pdf"'})
 
+# ── project: tasks / documents / valuations ──
+class TaskBody(BaseModel):
+    title: str
+    assignee: str = ""
+    status: str = "To do"
+    priority: str = "Normal"
+    due: str = ""
+
+@app.post("/api/admin/projects/{pid}/tasks")
+def add_task(pid: int, body: TaskBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        if not s.get(Project, pid):
+            raise HTTPException(404, "Project not found")
+        t = ProjectTask(project_id=pid, **body.model_dump()); s.add(t); s.commit(); s.refresh(t)
+        return task_out(t)
+
+@app.patch("/api/admin/tasks/{tid}")
+def update_task(tid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        t = s.get(ProjectTask, tid)
+        if not t:
+            raise HTTPException(404, "Not found")
+        for k, v in body.items():
+            if hasattr(t, k) and k not in ("id", "project_id"):
+                setattr(t, k, v)
+        s.add(t); s.commit(); s.refresh(t)
+        return task_out(t)
+
+@app.delete("/api/admin/tasks/{tid}")
+def del_task(tid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        t = s.get(ProjectTask, tid)
+        if t:
+            s.delete(t); s.commit()
+        return {"ok": True}
+
+class DocBody(BaseModel):
+    name: str
+    url: str = ""
+    kind: str = "Document"
+
+@app.post("/api/admin/projects/{pid}/documents")
+def add_doc(pid: int, body: DocBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        if not s.get(Project, pid):
+            raise HTTPException(404, "Project not found")
+        d = ProjectDoc(project_id=pid, **body.model_dump()); s.add(d); s.commit(); s.refresh(d)
+        return doc_out(d)
+
+@app.delete("/api/admin/documents/{did}")
+def del_doc(did: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        d = s.get(ProjectDoc, did)
+        if d:
+            s.delete(d); s.commit()
+        return {"ok": True}
+
+class ValBody(BaseModel):
+    ref: str = ""
+    amount: float = 0
+    status: str = "Draft"
+    note: str = ""
+
+@app.post("/api/admin/projects/{pid}/valuations")
+def add_val(pid: int, body: ValBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        if not s.get(Project, pid):
+            raise HTTPException(404, "Project not found")
+        v = Valuation(project_id=pid, **body.model_dump()); s.add(v); s.commit(); s.refresh(v)
+        return val_out(v)
+
+@app.patch("/api/admin/valuations/{vid}")
+def update_val(vid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        v = s.get(Valuation, vid)
+        if not v:
+            raise HTTPException(404, "Not found")
+        for k, val in body.items():
+            if hasattr(v, k) and k not in ("id", "project_id"):
+                setattr(v, k, val)
+        s.add(v); s.commit(); s.refresh(v)
+        return val_out(v)
+
+@app.delete("/api/admin/valuations/{vid}")
+def del_val(vid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        v = s.get(Valuation, vid)
+        if v:
+            s.delete(v); s.commit()
+        return {"ok": True}
+
 # ── admin: map (all projects with coords) ──
 @app.get("/api/admin/map")
 def admin_map(admin=Depends(require_admin)):
@@ -686,9 +849,18 @@ def slugify(t):
 
 # ─────────────────────────── inventory ───────────────────────────
 def product_out(p):
-    d = {k: getattr(p, k) for k in ["id", "name", "sku", "category", "blurb", "price", "cost", "stock", "reorder", "location", "image", "active"]}
+    d = {k: getattr(p, k) for k in ["id", "name", "sku", "category", "blurb", "price", "cost", "stock", "reorder", "location", "unit", "barcode", "supplier_id", "image", "active"]}
     d["status"] = "Out of stock" if p.stock <= 0 else ("Low" if p.stock <= p.reorder else "In stock")
     return d
+
+def supplier_out(s):
+    return {k: getattr(s, k) for k in ["id", "name", "contact", "email", "phone", "lead_time", "terms", "active"]}
+def task_out(t):
+    return {k: getattr(t, k) for k in ["id", "project_id", "title", "assignee", "status", "priority", "due"]}
+def doc_out(d):
+    return {k: getattr(d, k) for k in ["id", "project_id", "name", "url", "kind", "date"]}
+def val_out(v):
+    return {k: getattr(v, k) for k in ["id", "project_id", "ref", "amount", "status", "date", "note"]}
 
 def movement_out(m):
     return {k: getattr(m, k) for k in ["id", "product_id", "kind", "qty", "balance", "reason", "ref", "date"]}
@@ -778,6 +950,134 @@ def list_movements(pid: int, admin=Depends(require_admin)):
     with Session(engine) as s:
         rows = s.exec(select(StockMovement).where(StockMovement.product_id == pid)).all()
         return [movement_out(m) for m in sorted(rows, key=lambda m: m.id, reverse=True)]
+
+@app.get("/api/admin/movements")
+def all_movements(admin=Depends(require_admin)):
+    """Global stock ledger — recent movements across every product."""
+    with Session(engine) as s:
+        rows = sorted(s.exec(select(StockMovement)).all(), key=lambda m: m.id, reverse=True)[:60]
+        pnames = {p.id: (p.name, p.sku) for p in s.exec(select(Product)).all()}
+        out = []
+        for m in rows:
+            d = movement_out(m); d["product"], d["sku"] = pnames.get(m.product_id, ("", ""))
+            out.append(d)
+        return out
+
+# ── suppliers ──
+@app.get("/api/admin/suppliers")
+def list_suppliers(admin=Depends(require_admin)):
+    with Session(engine) as s:
+        out = []
+        counts = {}
+        for p in s.exec(select(Product)).all():
+            if p.supplier_id:
+                counts[p.supplier_id] = counts.get(p.supplier_id, 0) + 1
+        for sup in s.exec(select(Supplier)).all():
+            d = supplier_out(sup); d["productCount"] = counts.get(sup.id, 0); out.append(d)
+        return out
+
+class SupplierBody(BaseModel):
+    name: str
+    contact: str = ""
+    email: str = ""
+    phone: str = ""
+    lead_time: int = 7
+    terms: str = ""
+    active: bool = True
+
+@app.post("/api/admin/suppliers")
+def create_supplier(body: SupplierBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        sup = Supplier(**body.model_dump()); s.add(sup); s.commit(); s.refresh(sup)
+        return supplier_out(sup)
+
+@app.patch("/api/admin/suppliers/{sid}")
+def update_supplier(sid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        sup = s.get(Supplier, sid)
+        if not sup:
+            raise HTTPException(404, "Not found")
+        for k, v in body.items():
+            if hasattr(sup, k) and k != "id":
+                setattr(sup, k, v)
+        s.add(sup); s.commit(); s.refresh(sup)
+        return supplier_out(sup)
+
+@app.delete("/api/admin/suppliers/{sid}")
+def del_supplier(sid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        sup = s.get(Supplier, sid)
+        if sup:
+            for p in s.exec(select(Product).where(Product.supplier_id == sid)).all():
+                p.supplier_id = None; s.add(p)
+            s.delete(sup); s.commit()
+        return {"ok": True}
+
+# ── purchase orders (reorder → PO → receive) ──
+def po_out(s: Session, po: PurchaseOrder):
+    lines = s.exec(select(POLine).where(POLine.po_id == po.id)).all()
+    pnames = {p.id: p for p in s.exec(select(Product)).all()}
+    sup = s.get(Supplier, po.supplier_id) if po.supplier_id else None
+    ldata = [{"id": l.id, "product_id": l.product_id, "name": pnames.get(l.product_id).name if pnames.get(l.product_id) else "", "sku": pnames.get(l.product_id).sku if pnames.get(l.product_id) else "", "qty": l.qty, "cost": l.cost} for l in lines]
+    return {"id": po.id, "ref": po.ref, "supplier_id": po.supplier_id, "supplier": sup.name if sup else "", "status": po.status, "notes": po.notes, "date": po.created_at, "lines": ldata, "total": sum(l.qty * l.cost for l in lines)}
+
+@app.get("/api/admin/purchase-orders")
+def list_pos(admin=Depends(require_admin)):
+    with Session(engine) as s:
+        return [po_out(s, po) for po in sorted(s.exec(select(PurchaseOrder)).all(), key=lambda x: x.id, reverse=True)]
+
+class POBody(BaseModel):
+    supplier_id: Optional[int] = None
+    notes: str = ""
+    lines: list = []   # [{product_id, qty, cost}]
+
+@app.post("/api/admin/purchase-orders")
+def create_po(body: POBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        n = len(s.exec(select(PurchaseOrder)).all()) + 1
+        po = PurchaseOrder(ref=f"PO-{2400 + n}", supplier_id=body.supplier_id, notes=body.notes, status="Draft")
+        s.add(po); s.commit(); s.refresh(po)
+        for ln in body.lines:
+            s.add(POLine(po_id=po.id, product_id=int(ln["product_id"]), qty=int(ln.get("qty", 0)), cost=float(ln.get("cost", 0))))
+        s.commit()
+        return po_out(s, po)
+
+@app.patch("/api/admin/purchase-orders/{poid}")
+def update_po(poid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        po = s.get(PurchaseOrder, poid)
+        if not po:
+            raise HTTPException(404, "Not found")
+        for k in ("status", "notes", "supplier_id"):
+            if k in body:
+                setattr(po, k, body[k])
+        s.add(po); s.commit(); s.refresh(po)
+        return po_out(s, po)
+
+@app.post("/api/admin/purchase-orders/{poid}/receive")
+def receive_po(poid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        po = s.get(PurchaseOrder, poid)
+        if not po:
+            raise HTTPException(404, "Not found")
+        for l in s.exec(select(POLine).where(POLine.po_id == poid)).all():
+            p = s.get(Product, l.product_id)
+            if not p:
+                continue
+            p.stock = p.stock + l.qty
+            s.add(p); s.add(StockMovement(product_id=p.id, kind="Receive", qty=l.qty, balance=p.stock, reason=f"PO {po.ref}", ref=po.ref))
+        po.status = "Received"; s.add(po); s.commit()
+        return po_out(s, po)
+
+@app.delete("/api/admin/purchase-orders/{poid}")
+def del_po(poid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        po = s.get(PurchaseOrder, poid)
+        if po:
+            for l in s.exec(select(POLine).where(POLine.po_id == poid)).all():
+                s.delete(l)
+            s.delete(po); s.commit()
+        return {"ok": True}
 
 # ─────────────────────────── site content (CMS) ───────────────────────────
 def content_out(c):
@@ -870,6 +1170,48 @@ def seed_content(s: Session):
     ]
     for t, title, excerpt, status, img, yt in items:
         s.add(SiteContent(type=t, title=title, slug=slugify(title), excerpt=excerpt, status=status, image=img, youtube=yt, body=excerpt))
+    s.commit()
+
+def seed_suppliers(s: Session):
+    sups = [
+        ("SKF Bearings South Africa", "Johan Meyer", "orders@skf.co.za", "+27 11 821 3500", 14, "Net 30", ["BRG-6205"]),
+        ("Flir / Teledyne EMEA", "Sales Desk", "emea.sales@flir.com", "+32 3 665 5100", 21, "50% deposit", ["THM-E8XT", "UT-LD200", "SEN-VA3"]),
+        ("Harare Industrial Supplies", "Tendai Moyo", "sales@harareindustrial.co.zw", "+263 24 277 1200", 5, "Net 14", ["LUB-EP2", "LIF-CH2", "LIF-WS3", "FLU-OSK"]),
+    ]
+    prods = {p.sku: p for p in s.exec(select(Product)).all()}
+    for name, contact, email, phone, lt, terms, skus in sups:
+        sup = Supplier(name=name, contact=contact, email=email, phone=phone, lead_time=lt, terms=terms)
+        s.add(sup); s.commit(); s.refresh(sup)
+        for sku in skus:
+            if sku in prods:
+                prods[sku].supplier_id = sup.id; s.add(prods[sku])
+    s.commit()
+
+def seed_project_depth(s: Session):
+    p = s.exec(select(Project).where(Project.title == "Concentrator Vibration Route")).first()
+    if not p:
+        return
+    tasks = [
+        ("Mount accelerometers on Mill 2 drive train", "R. Chikanya", "Done", "High", "2026-06-10"),
+        ("Baseline all 148 rotating assets", "R. Chikanya", "Done", "Normal", "2026-05-20"),
+        ("Investigate Mill 2 pinion bearing fault", "T. Ncube", "In progress", "High", "2026-08-18"),
+        ("Issue August route report", "Analyst desk", "To do", "Normal", "2026-08-31"),
+        ("Schedule shutdown for gearbox inspection", "Planning", "Blocked", "High", "2026-09-05"),
+    ]
+    for title, who, st, pr, due in tasks:
+        s.add(ProjectTask(project_id=p.id, title=title, assignee=who, status=st, priority=pr, due=due))
+    docs = [
+        ("Vibration route report — August", "Report"), ("Accelerometer calibration certificate", "Certificate"),
+        ("Concentrator asset register", "Document"),
+    ]
+    for name, kind in docs:
+        s.add(ProjectDoc(project_id=p.id, name=name, kind=kind, url=""))
+    vals = [
+        ("VAL-001", 14000, "Certified", "2026-06-30", "Q2 monitoring — 3 months"),
+        ("VAL-002", 13500, "Submitted", "2026-08-05", "Q3 monitoring to date"),
+    ]
+    for ref, amt, st, d, note in vals:
+        s.add(Valuation(project_id=p.id, ref=ref, amount=amt, status=st, date=d, note=note))
     s.commit()
 
 def seed(s: Session):
