@@ -149,6 +149,8 @@ body { margin:0; font-family:var(--font-body); font-weight:400; color:var(--colo
   .chip { display:inline-flex; align-items:center; gap:.4rem; font-family:var(--font-mono); font-size:.68rem; font-weight:500; letter-spacing:.05em; text-transform:uppercase; padding:.4rem .8rem; border-radius:8px; background:var(--color-mist); color:var(--color-steel-100); border:1px solid var(--color-line); }
   .chip-red { background:var(--color-red-500); color:#fff; border-color:transparent; }
   .badge-ok { color:var(--color-ok); } .badge-warn { color:var(--color-warn); } .badge-crit { color:var(--color-crit); }
+  /* hero headline — pure white on the left half, brand red on the right half, meeting in a seamless fade at dead-centre (per-letter) */
+  .grad-wr { background-image:linear-gradient(90deg,#ffffff 0%,#ffffff 43%,var(--color-red-500) 57%,var(--color-red-500) 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; }
 
   .link-underline { position:relative; font-weight:500; }
   .link-underline::after { content:""; position:absolute; left:0; bottom:-3px; height:2px; width:0; background:var(--color-red-500); transition:width .4s cubic-bezier(.2,.7,.3,1); }

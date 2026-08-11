@@ -70,7 +70,7 @@ function Hero() {
     return () => clearInterval(t);
   }, []);
   const Kicker = <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="kicker has-icon mb-5" style={{ color: 'var(--color-red-400)' }}><Icon name="gauge" className="w-4 h-4" /> Condition monitoring · Precision maintenance · Harare</motion.p>;
-  const Heading = <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.08 }} className="display-1 text-white text-balance max-w-4xl">All failures are <span className="text-red-500">preventable.</span></motion.h1>;
+  const Heading = <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.08 }} className="display-1 text-balance max-w-4xl"><span className="grad-wr">All failures are preventable.</span></motion.h1>;
 
   return (
     <section className="relative w-full overflow-hidden bg-navy-950">
@@ -82,8 +82,8 @@ function Hero() {
         <div className="relative flex-1 min-h-0 flex flex-col justify-end px-5 pt-24 pb-5">
           {Kicker}
           <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.08 }}
-            className="font-display font-extrabold text-white text-balance leading-[0.96] tracking-[-0.03em] mt-1"
-            style={{ fontSize: 'clamp(2.35rem, 11vw, 3.4rem)' }}>All failures are <span className="text-red-500">preventable.</span></motion.h1>
+            className="font-display font-extrabold text-balance leading-[0.96] tracking-[-0.03em] mt-1"
+            style={{ fontSize: 'clamp(2.35rem, 11vw, 3.4rem)' }}><span className="grad-wr">All failures are preventable.</span></motion.h1>
           <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2 }} className="text-white/75 mt-3.5 text-[0.94rem] leading-relaxed line-clamp-3">{brand.positioning}</motion.p>
           <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.32 }} className="grid grid-cols-2 gap-3 mt-6">
             <Link to="/contact" className="btn btn-red w-full !px-4">Book a survey <Icon name="arrowRight" className="w-4 h-4" /></Link>
@@ -165,13 +165,18 @@ function Services() {
           ))}
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
-          {shown.map((s, i) => (
-            <Reveal key={s.slug} delay={(i % 3) * 0.04} className="h-full">
-              <Link to="/services" className="group relative cover-frame lift block h-full aspect-[3/4] sm:aspect-[5/6]" style={{ borderRadius: 'var(--radius-md)' }}>
+          {shown.map((s, i) => {
+            const n = shown.length, last = i === n - 1, r3 = n % 3;
+            const wideMob = last && n % 2 === 1;              // fill the 2-col mobile orphan
+            const wideDesk = last && r3 !== 0;                // fill the 3-col desktop orphan
+            const span = `${wideMob ? 'col-span-2' : ''} ${last ? (r3 === 1 ? 'lg:col-span-3' : r3 === 2 ? 'lg:col-span-2' : 'lg:col-span-1') : 'lg:col-span-1'}`;
+            const aspect = `${wideMob ? 'aspect-[16/10]' : 'aspect-[3/4] sm:aspect-[5/6]'} ${last && wideDesk ? 'lg:aspect-[16/9]' : last ? 'lg:aspect-[5/6]' : ''}`;
+            return (
+            <Reveal key={s.slug} delay={(i % 3) * 0.04} className={`h-full ${span}`}>
+              <Link to="/services" className={`group relative cover-frame lift block h-full ${aspect}`} style={{ borderRadius: 'var(--radius-md)' }}>
                 <img src={s.image} alt={s.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover img-rich transition-transform duration-[1.1s] group-hover:scale-105" />
                 {/* legibility scrim — stronger on mobile where cards are small */}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-[#08080a]/45 to-transparent sm:scrim-b" aria-hidden />
-                <div className="absolute inset-0 grad-red opacity-0 group-hover:opacity-20 transition-opacity duration-500" aria-hidden />
                 {/* icon — smaller & tighter on mobile */}
                 <span className="absolute top-3 left-3 sm:top-5 sm:left-5 grid place-items-center w-10 h-10 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl glass text-white group-hover:bg-red-500 group-hover:border-red-500 transition-colors"><Icon name={s.icon} className="w-5 h-5 sm:w-7 sm:h-7" strokeWidth={1.5} /></span>
                 {/* decorative arrow: desktop only (no hover on mobile) */}
@@ -182,7 +187,8 @@ function Services() {
                 </div>
               </Link>
             </Reveal>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

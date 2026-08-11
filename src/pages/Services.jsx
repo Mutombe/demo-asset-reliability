@@ -32,9 +32,9 @@ function FeatureCard({ s, index }) {
 }
 
 /* ─────────────── STANDARD CARD (image-top) ─────────────── */
-function ServiceCard({ s, index }) {
+function ServiceCard({ s, index, spanClass = '' }) {
   return (
-    <Reveal delay={(index % 3) * 0.04} className="h-full">
+    <Reveal delay={(index % 3) * 0.04} className={`h-full ${spanClass}`}>
       <Link to={`/services/${s.slug}`} className="group panel lift ticked h-full overflow-hidden flex flex-col">
         <div className="relative overflow-hidden aspect-[16/10]">
           <img src={s.image} alt={s.name} className="absolute inset-0 w-full h-full object-cover duotone transition-transform duration-[1.1s] group-hover:scale-105" />
@@ -82,11 +82,14 @@ function ServicesGrid() {
 
         {/* bento grid: first card featured/wide, rest image-top */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
-          {shown.map((s, i) => (
-            i === 0
-              ? <FeatureCard key={s.slug} s={s} index={i} />
-              : <ServiceCard key={s.slug} s={s} index={i} />
-          ))}
+          {shown.map((s, i) => {
+            if (i === 0) return <FeatureCard key={s.slug} s={s} index={i} />;
+            // feature card occupies 2 column-units, so total units = n + 1; fill any trailing gap with the last card.
+            const n = shown.length, last = i === n - 1;
+            const rL = (n + 1) % 3, rS = (n + 1) % 2;
+            const span = last ? `${rS === 1 ? 'sm:col-span-2' : ''} ${rL === 1 ? 'lg:col-span-3' : rL === 2 ? 'lg:col-span-2' : ''}` : '';
+            return <ServiceCard key={s.slug} s={s} index={i} spanClass={span} />;
+          })}
         </div>
 
         {shown.length === 0 && (
