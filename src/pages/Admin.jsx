@@ -7,6 +7,7 @@ import {
   API_BASE, getToken, setToken, adminLogin, adminGoogle, listClients, getClient, createClient,
   regenPin, deleteClient, createProject, updateProject, deleteProject, addWorklog, addMilestone,
   toggleMilestone, addPhoto, getMap, STATUS_HEX, STATUSES,
+  uploadPhoto, deletePhoto, notifyClient, adminReport, waLink, photoSrc,
 } from '../api';
 
 const GOOGLE_CLIENT_ID = '961906050297-3taptq0frt5digsbi7tj0058v6g0sf19.apps.googleusercontent.com';
@@ -100,6 +101,16 @@ function ProjectManage({ project, onBack, reload }) {
   const doToggle = async (m) => { await toggleMilestone(m.id, !m.done); await refresh(); };
   const doWorklog = async () => { if (!wl.title) return; await addWorklog(p.id, wl); setWl({ date: '', title: '', note: '', status: 'Logged' }); await refresh(); toast.success('Update logged'); };
   const doPhoto = async () => { if (!ph.url) return; await addPhoto(p.id, ph); setPh({ url: '', caption: '' }); await refresh(); toast.success('Photo added'); };
+  const [upBusy, setUpBusy] = useState(false);
+  const doUpload = async (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    setUpBusy(true);
+    try { await uploadPhoto(p.id, f, ph.caption); setPh({ url: '', caption: '' }); await refresh(); toast.success('Photo uploaded'); }
+    catch (err) { toast.error(err.message); } finally { setUpBusy(false); e.target.value = ''; }
+  };
+  const doDelPhoto = async (id) => { await deletePhoto(id); await refresh(); toast('Photo removed'); };
+  const [rep, setRep] = useState(false);
+  const report = async () => { setRep(true); try { await adminReport(p.id, (p.title || 'project').replace(/\s+/g, '-').toLowerCase()); toast.success('Report downloaded'); } catch (e) { toast.error(e.message); } finally { setRep(false); } };
   const remove = async () => { await deleteProject(p.id); toast('Project deleted'); reload(); onBack(); };
 
   return (
@@ -107,7 +118,11 @@ function ProjectManage({ project, onBack, reload }) {
       <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400 mb-5"><Icon name="arrowLeft" className="w-4 h-4" /> Back to client</button>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h2 className="font-display text-xl text-steel-50">{p.title || 'Untitled project'}</h2>
-        <div className="flex gap-2"><button onClick={remove} className="btn btn-glass !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button><button onClick={save} disabled={saving} className="btn btn-red !py-2.5">{saving ? 'Saving…' : 'Save changes'}</button></div>
+        <div className="flex gap-2">
+          <button onClick={report} disabled={rep} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] disabled:opacity-60"><Icon name="download" className="w-4 h-4" /> {rep ? '…' : 'PDF'}</button>
+          <button onClick={remove} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button>
+          <button onClick={save} disabled={saving} className="btn btn-red !py-2.5">{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
       </div>
 
       {/* editable fields */}
@@ -154,9 +169,23 @@ function ProjectManage({ project, onBack, reload }) {
         <div className="panel p-5 lg:col-span-2">
           <h3 className="font-display text-steel-50 mb-3">Site photos</h3>
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
-            {(p.photos || []).map((x) => (<figure key={x.id} className="cover-frame aspect-square relative"><img src={x.url} alt={x.caption} className="absolute inset-0 w-full h-full object-cover duotone" /></figure>))}
+            {(p.photos || []).map((x) => (
+              <figure key={x.id} className="cover-frame aspect-square relative group">
+                <img src={photoSrc(x.url)} alt={x.caption} className="absolute inset-0 w-full h-full object-cover duotone" />
+                <button onClick={() => doDelPhoto(x.id)} className="absolute top-1 right-1 grid place-items-center w-6 h-6 rounded bg-steel-950/70 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition"><Icon name="x" className="w-3.5 h-3.5" /></button>
+              </figure>
+            ))}
           </div>
-          <div className="flex gap-2"><input className="input !py-2 flex-1" placeholder="Image URL" value={ph.url} onChange={(e) => setPh({ ...ph, url: e.target.value })} /><input className="input !py-2 w-40" placeholder="Caption" value={ph.caption} onChange={(e) => setPh({ ...ph, caption: e.target.value })} /><button onClick={doPhoto} className="btn btn-red !py-2 !px-3"><Icon name="plus" className="w-4 h-4" /></button></div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <input className="input !py-2 w-40" placeholder="Caption (optional)" value={ph.caption} onChange={(e) => setPh({ ...ph, caption: e.target.value })} />
+            <label className={`btn btn-red !py-2 !px-3 cursor-pointer ${upBusy ? 'opacity-60 pointer-events-none' : ''}`}>
+              <Icon name="plus" className="w-4 h-4" /> {upBusy ? 'Uploading…' : 'Upload photo'}
+              <input type="file" accept="image/*" className="hidden" onChange={doUpload} />
+            </label>
+            <span className="mono-label text-steel-500">or</span>
+            <input className="input !py-2 flex-1 min-w-[8rem]" placeholder="Paste image URL" value={ph.url} onChange={(e) => setPh({ ...ph, url: e.target.value })} />
+            <button onClick={doPhoto} className="btn btn-ghost !py-2 !px-3">Add URL</button>
+          </div>
         </div>
       </div>
     </div>
@@ -168,6 +197,13 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
   const [proj, setProj] = useState(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_PROJECT);
+  const [emailing, setEmailing] = useState(false);
+  const sendEmail = async () => {
+    if (!client.email) { toast.error('Add an email address for this client first'); return; }
+    setEmailing(true);
+    try { const r = await notifyClient(client.id, portalLink(client.slug)); toast.success(`Portal link emailed to ${r.to}`); }
+    catch (e) { toast.error(e.message); } finally { setEmailing(false); }
+  };
 
   const create = async () => {
     if (!form.title) { toast.error('Project needs a title'); return; }
@@ -186,8 +222,10 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><h2 className="font-display text-2xl text-steel-50">{client.name}</h2><p className="text-sm text-steel-400 mt-1">{client.contact} {client.email && `· ${client.email}`}</p></div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => copy(portalLink(client.slug), 'Portal link copied')} className="btn btn-glass !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /> Copy link</button>
-            <button onClick={async () => { const r = await regenPin(client.id); await reloadClient(); toast.success(`New PIN: ${r.pin}`); }} className="btn btn-glass !py-2 !px-3 text-[0.78rem]">New PIN</button>
+            <button onClick={() => copy(portalLink(client.slug), 'Portal link copied')} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /> Copy</button>
+            <a href={waLink(client.contact, portalLink(client.slug), client.pin)} target="_blank" rel="noreferrer" className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="whatsapp" className="w-4 h-4" /> WhatsApp</a>
+            <button onClick={sendEmail} disabled={emailing} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] disabled:opacity-60"><Icon name="mail" className="w-4 h-4" /> {emailing ? 'Sending…' : 'Email'}</button>
+            <button onClick={async () => { const r = await regenPin(client.id); await reloadClient(); toast.success(`New PIN: ${r.pin}`); }} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]">New PIN</button>
           </div>
         </div>
         <div className="grid sm:grid-cols-2 gap-3 mt-4">
@@ -281,7 +319,7 @@ function Console({ admin, onOut }) {
             <div className="flex items-center gap-2 lg:hidden">
               <button onClick={() => { setTab('overview'); setSel(null); }} className={`px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === 'overview' && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>Overview</button>
               <button onClick={() => { setTab('clients'); setSel(null); }} className={`px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === 'clients' && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>Clients</button>
-              <button onClick={onOut} className="btn btn-glass !py-2 !px-3 text-[0.78rem]">Exit</button>
+              <button onClick={onOut} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]">Exit</button>
             </div>
           </div>
 
@@ -318,8 +356,8 @@ function Console({ admin, onOut }) {
                     <div className="flex items-center justify-between mt-4 panel-800 p-2.5"><div><p className="mono-label text-steel-500">PIN</p><p className="font-mono text-lg text-steel-50 tracking-[0.3em]">{c.pin}</p></div><span className="font-mono text-[0.66rem] text-steel-500 truncate max-w-[8rem]">/portal?c={c.slug}</span></div>
                     <div className="flex gap-2 mt-3">
                       <button onClick={() => openClient(c.id)} className="btn btn-red !py-2 flex-1 text-[0.78rem]">Manage</button>
-                      <button onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-glass !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
-                      <button onClick={() => delC(c.id, c.name)} className="btn btn-glass !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
+                      <button onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
+                      <button onClick={() => delC(c.id, c.name)} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
                     </div>
                   </div>
                 ))}

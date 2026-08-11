@@ -10,16 +10,23 @@ Secrets are read from the environment only — never committed:
   DATABASE_URL, JWT_SECRET, ADMIN_PASSCODE, GOOGLE_CLIENT_ID, ADMIN_EMAILS
 """
 import os
+import io
 import random
 import string
+import smtplib
 import datetime as dt
+from email.message import EmailMessage
 from typing import Optional, List
 
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, Header, Body
+from fastapi import FastAPI, Depends, HTTPException, Header, Body, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import LargeBinary, Column, text
 from sqlmodel import SQLModel, Field, Session, create_engine, select, Relationship
+from PIL import Image
+from fpdf import FPDF
 
 # ─────────────────────────── config ───────────────────────────
 DB_URL = os.environ.get("DATABASE_URL", "sqlite:///./ars.db")
@@ -29,6 +36,14 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "dev-insecure-change-me")
 ADMIN_PASSCODE = os.environ.get("ADMIN_PASSCODE", "ars2026")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
+
+# SMTP (Django-style env names, shared with the wider project)
+SMTP_HOST = os.environ.get("EMAIL_HOST", "")
+SMTP_PORT = int(os.environ.get("EMAIL_PORT", "465") or "465")
+SMTP_USER = os.environ.get("EMAIL_HOST_USER", "")
+SMTP_PASS = os.environ.get("EMAIL_HOST_PASSWORD", "")
+SMTP_SSL = os.environ.get("EMAIL_USE_SSL", "true").lower() in ("1", "true", "yes")
+SMTP_FROM = os.environ.get("FROM_EMAIL", SMTP_USER)
 
 connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
 engine = create_engine(DB_URL, echo=False, pool_pre_ping=True, connect_args=connect_args)
@@ -87,6 +102,12 @@ class Photo(SQLModel, table=True):
     project_id: int = Field(index=True, foreign_key="ars_project.id")
     url: str = ""
     caption: str = ""
+    mime: str = ""
+    data: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
+
+def photo_out(ph: "Photo"):
+    """Serialise a photo WITHOUT its binary blob (never send bytes as JSON)."""
+    return {"id": ph.id, "project_id": ph.project_id, "url": ph.url, "caption": ph.caption}
 
 # ─────────────────────────── helpers ───────────────────────────
 def new_slug(n=6):
@@ -121,7 +142,7 @@ def project_dict(s: Session, p: Project, deep=True):
         pics = s.exec(select(Photo).where(Photo.project_id == p.id)).all()
         d["worklogs"] = sorted([w.model_dump() for w in logs], key=lambda x: x["date"], reverse=True)
         d["milestones"] = [m.model_dump() for m in mils]
-        d["photos"] = [ph.model_dump() for ph in pics]
+        d["photos"] = [photo_out(ph) for ph in pics]
     return d
 
 def client_dict(s: Session, c: Client, deep=False):
@@ -138,9 +159,23 @@ app = FastAPI(title="ARS Portal API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
                    allow_methods=["*"], allow_headers=["*"])
 
+def migrate():
+    """Add columns to pre-existing tables (create_all only creates missing tables)."""
+    stmts = [
+        "ALTER TABLE ars_photo ADD COLUMN IF NOT EXISTS mime VARCHAR",
+        "ALTER TABLE ars_photo ADD COLUMN IF NOT EXISTS data BYTEA",
+    ]
+    with engine.begin() as conn:
+        for st in stmts:
+            try:
+                conn.execute(text(st))
+            except Exception:
+                pass
+
 @app.on_event("startup")
 def on_startup():
     SQLModel.metadata.create_all(engine)
+    migrate()
     with Session(engine) as s:
         if s.exec(select(Client)).first():
             return
@@ -344,9 +379,197 @@ def add_photo(pid: int, body: PhotoBody, admin=Depends(require_admin)):
     with Session(engine) as s:
         if not s.get(Project, pid):
             raise HTTPException(404, "Project not found")
-        ph = Photo(project_id=pid, **body.model_dump())
+        ph = Photo(project_id=pid, url=body.url, caption=body.caption)
         s.add(ph); s.commit(); s.refresh(ph)
-        return ph.model_dump()
+        return photo_out(ph)
+
+def compress_image(raw: bytes, max_dim=1600, quality=82):
+    im = Image.open(io.BytesIO(raw)).convert("RGB")
+    im.thumbnail((max_dim, max_dim))
+    out = io.BytesIO(); im.save(out, format="JPEG", quality=quality, optimize=True)
+    return out.getvalue(), "image/jpeg"
+
+@app.post("/api/admin/projects/{pid}/upload")
+async def upload_photo(pid: int, file: UploadFile = File(...), caption: str = Form(""), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        if not s.get(Project, pid):
+            raise HTTPException(404, "Project not found")
+        raw = await file.read()
+        if len(raw) > 15_000_000:
+            raise HTTPException(413, "Image too large (max 15 MB)")
+        try:
+            data, mime = compress_image(raw)
+        except Exception:
+            raise HTTPException(400, "Could not read that image")
+        ph = Photo(project_id=pid, caption=caption, mime=mime, data=data)
+        s.add(ph); s.commit(); s.refresh(ph)
+        ph.url = f"/api/photos/{ph.id}"; s.add(ph); s.commit(); s.refresh(ph)
+        return photo_out(ph)
+
+@app.get("/api/photos/{photo_id}")
+def get_photo(photo_id: int):
+    with Session(engine) as s:
+        ph = s.get(Photo, photo_id)
+        if not ph or not ph.data:
+            raise HTTPException(404, "Not found")
+        return Response(content=ph.data, media_type=ph.mime or "image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+@app.delete("/api/admin/photos/{photo_id}")
+def del_photo(photo_id: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        ph = s.get(Photo, photo_id)
+        if ph:
+            s.delete(ph); s.commit()
+        return {"ok": True}
+
+# ── email delivery of the portal link + PIN ──
+class NotifyBody(BaseModel):
+    link: str
+
+@app.post("/api/admin/clients/{cid}/notify")
+def notify_client(cid: int, body: NotifyBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        c = s.get(Client, cid)
+        if not c:
+            raise HTTPException(404, "Not found")
+        if not c.email:
+            raise HTTPException(400, "This client has no email address on file")
+        if not (SMTP_HOST and SMTP_USER and SMTP_PASS):
+            raise HTTPException(400, "Email sending is not configured on the server")
+        html = f"""<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto">
+          <div style="background:#17181c;color:#fff;padding:20px 24px"><b style="font-size:18px">Asset Reliability Services</b></div>
+          <div style="border:1px solid #eee;border-top:0;padding:24px">
+            <p>Hello {c.name},</p>
+            <p>You can now follow your projects with us online — live progress, work history, site photos, costs and reports for every job.</p>
+            <p style="margin:24px 0"><a href="{body.link}" style="background:#e2211c;color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:bold">Open your portal</a></p>
+            <p style="font-size:14px;color:#555">Or paste this link: <a href="{body.link}">{body.link}</a></p>
+            <p style="font-size:15px">Your access PIN: <b style="font-size:22px;letter-spacing:3px">{c.pin}</b></p>
+            <p style="font-size:12px;color:#999;margin-top:24px">Asset Reliability Services (Pvt) Ltd</p>
+          </div></div>"""
+        text = f"Hello {c.name},\n\nTrack your projects with Asset Reliability Services:\n{body.link}\nAccess PIN: {c.pin}\n\n— Asset Reliability Services (Pvt) Ltd"
+        try:
+            msg = EmailMessage(); msg["Subject"] = "Your Asset Reliability Services project portal"
+            msg["From"] = SMTP_FROM; msg["To"] = c.email
+            msg.set_content(text); msg.add_alternative(html, subtype="html")
+            if SMTP_SSL:
+                with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=25) as srv:
+                    srv.login(SMTP_USER, SMTP_PASS); srv.send_message(msg)
+            else:
+                with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=25) as srv:
+                    srv.starttls(); srv.login(SMTP_USER, SMTP_PASS); srv.send_message(msg)
+        except Exception as e:
+            raise HTTPException(502, f"Could not send email: {e}")
+        return {"ok": True, "to": c.email}
+
+# ── PDF report ──
+def photo_blobs(s: Session, pid: int, limit=4):
+    out = []
+    for ph in s.exec(select(Photo).where(Photo.project_id == pid)).all():
+        if len(out) >= limit:
+            break
+        b = ph.data
+        if not b and ph.url.startswith("http"):
+            try:
+                import urllib.request
+                b = urllib.request.urlopen(ph.url, timeout=8).read()
+            except Exception:
+                b = None
+        if b:
+            out.append((ph.caption or "", b))
+    return out
+
+def _t(s):
+    """Core PDF fonts are latin-1 only — normalise smart punctuation, drop the rest."""
+    s = str(s)
+    for a, b in (("—", "-"), ("–", "-"), ("‘", "'"), ("’", "'"), ("“", '"'), ("”", '"'), ("…", "...")):
+        s = s.replace(a, b)
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+LM, RM, PW = 14, 14, 210            # left/right margin, page width
+CW = PW - LM - RM                   # content width = 182
+
+def build_report(client_name, p, photos):
+    RED, DARK, GREY = (226, 33, 28), (23, 24, 28), (120, 120, 130)
+    pdf = FPDF(format="A4"); pdf.set_margins(LM, 14, RM); pdf.set_auto_page_break(True, margin=18); pdf.add_page()
+    pdf.set_fill_color(*DARK); pdf.rect(0, 0, PW, 26, "F")
+    pdf.set_xy(LM, 8); pdf.set_text_color(255, 255, 255); pdf.set_font("Helvetica", "B", 15); pdf.cell(120, 8, "Asset Reliability Services")
+    pdf.set_xy(LM, 16); pdf.set_font("Helvetica", "", 9); pdf.set_text_color(225, 225, 225); pdf.cell(120, 5, "Project report")
+    pdf.set_xy(PW - RM - 46, 10); pdf.set_font("Helvetica", "B", 9); pdf.set_text_color(255, 170, 165); pdf.cell(46, 5, dt.date.today().isoformat(), align="R")
+
+    pdf.set_xy(LM, 34); pdf.set_text_color(*DARK); pdf.set_font("Helvetica", "B", 20); pdf.multi_cell(CW, 9, _t(p["title"]))
+    pdf.set_x(LM); pdf.set_text_color(*GREY); pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(CW, 6, _t(f'{client_name}   |   {p["type"]}   |   {p["status"]}   |   {p["progress"]}% complete'))
+    pdf.ln(6)
+
+    def head(t):
+        pdf.set_x(LM); pdf.set_text_color(*RED); pdf.set_font("Helvetica", "B", 8); pdf.cell(CW, 5, _t(t.upper())); pdf.ln(7)
+    def kv(k, v):
+        y = pdf.get_y()
+        pdf.set_xy(LM, y); pdf.set_text_color(*GREY); pdf.set_font("Helvetica", "", 9); pdf.cell(36, 6, _t(k))
+        pdf.set_xy(LM + 36, y); pdf.set_text_color(*DARK); pdf.set_font("Helvetica", "", 9); pdf.multi_cell(CW - 36, 6, _t(v))
+
+    head("Overview")
+    kv("Contract value", "US$ %s" % f'{p["budget"]:,.0f}'); kv("Spent to date", "US$ %s" % f'{p["spent"]:,.0f}')
+    kv("Schedule", f'{p.get("start_date","-") or "-"}  to  {p.get("due_date","-") or "-"}'); kv("Location", p.get("location") or "-")
+    if p.get("description"):
+        pdf.ln(1); kv("Summary", p["description"])
+    if p.get("milestones"):
+        pdf.ln(3); head("Milestones")
+        for m in p["milestones"]:
+            y = pdf.get_y()
+            pdf.set_xy(LM, y); pdf.set_text_color(*((30, 150, 90) if m["done"] else RED)); pdf.set_font("Helvetica", "B", 11); pdf.cell(6, 6, "+" if m["done"] else "o")
+            pdf.set_xy(LM + 6, y); pdf.set_text_color(*DARK); pdf.set_font("Helvetica", "", 9); pdf.multi_cell(CW - 6, 6, _t(f'{m["title"]}   ({m.get("due","")})'))
+    if p.get("worklogs"):
+        pdf.ln(3); head("Work history")
+        for w in p["worklogs"]:
+            pdf.set_x(LM); pdf.set_text_color(*RED); pdf.set_font("Helvetica", "B", 8); pdf.cell(CW, 5, _t(f'{w["date"]}   |   {w["status"]}')); pdf.ln(5)
+            pdf.set_x(LM); pdf.set_text_color(*DARK); pdf.set_font("Helvetica", "B", 9); pdf.cell(CW, 5, _t(w["title"])); pdf.ln(5)
+            if w.get("note"):
+                pdf.set_x(LM); pdf.set_text_color(*GREY); pdf.set_font("Helvetica", "", 9); pdf.multi_cell(CW, 5, _t(w["note"]))
+            pdf.ln(2)
+    if photos:
+        pdf.ln(3); head("Site photos")
+        y = pdf.get_y()
+        for i, (cap, b) in enumerate(photos):
+            col = i % 2
+            if col == 0 and i > 0:
+                y += 62
+            if y > 235:
+                pdf.add_page(); y = 20
+            try:
+                pdf.image(io.BytesIO(b), x=LM + col * 92, y=y, w=88, h=56)
+            except Exception:
+                pass
+        pdf.set_y(y + 60)
+    return bytes(pdf.output())
+
+@app.get("/api/admin/projects/{pid}/report")
+def admin_report(pid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        p = s.get(Project, pid)
+        if not p:
+            raise HTTPException(404, "Not found")
+        c = s.get(Client, p.client_id)
+        pdf = build_report(c.name if c else "", project_dict(s, p), photo_blobs(s, pid))
+        return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="ARS-report-{pid}.pdf"'})
+
+class ReportReq(BaseModel):
+    code: str
+    pin: str
+    project_id: int
+
+@app.post("/api/portal/report")
+def client_report(body: ReportReq):
+    with Session(engine) as s:
+        c = s.exec(select(Client).where(Client.slug == body.code.strip().lower())).first()
+        if not c or c.pin != body.pin.strip():
+            raise HTTPException(401, "Invalid code or PIN")
+        p = s.get(Project, body.project_id)
+        if not p or p.client_id != c.id:
+            raise HTTPException(404, "Not found")
+        pdf = build_report(c.name, project_dict(s, p), photo_blobs(s, body.project_id))
+        return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="ARS-report-{p.id}.pdf"'})
 
 # ── admin: map (all projects with coords) ──
 @app.get("/api/admin/map")

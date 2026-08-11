@@ -48,6 +48,44 @@ export const toggleMilestone = (mid, done) => req(`/api/admin/milestones/${mid}`
 export const addPhoto = (pid, body) => req(`/api/admin/projects/${pid}/photos`, { method: 'POST', body, auth: true });
 export const getMap = () => req('/api/admin/map', { auth: true });
 
+export const deletePhoto = (id) => req(`/api/admin/photos/${id}`, { method: 'DELETE', auth: true });
+export const notifyClient = (cid, link) => req(`/api/admin/clients/${cid}/notify`, { method: 'POST', body: { link }, auth: true });
+
+/* resolve a photo URL: uploaded photos are stored relative to the API host */
+export const photoSrc = (url) => (!url ? '' : url.startsWith('http') ? url : API_BASE + url);
+
+/* multipart photo upload */
+export async function uploadPhoto(pid, file, caption = '') {
+  const fd = new FormData(); fd.append('file', file); fd.append('caption', caption);
+  const t = getToken();
+  const res = await fetch(`${API_BASE}/api/admin/projects/${pid}/upload`, { method: 'POST', headers: t ? { Authorization: `Bearer ${t}` } : {}, body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'Upload failed');
+  return data;
+}
+
+/* PDF report download (returns nothing, triggers a browser download) */
+async function downloadPdf(path, { method = 'GET', body, auth } = {}, filename = 'ARS-report.pdf') {
+  const headers = {};
+  if (auth) { const t = getToken(); if (t) headers.Authorization = `Bearer ${t}`; }
+  if (body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(API_BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Could not generate report'); }
+  const blob = await res.blob();
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+export const adminReport = (pid, name = 'report') => downloadPdf(`/api/admin/projects/${pid}/report`, { auth: true }, `ARS-${name}.pdf`);
+export const clientReport = (code, pin, projectId, name = 'report') => downloadPdf('/api/portal/report', { method: 'POST', body: { code, pin, project_id: projectId } }, `ARS-${name}.pdf`);
+
+/* WhatsApp deep-link with the portal link + PIN prefilled */
+export const waLink = (contact, link, pin) => {
+  const num = (contact || '').replace(/\D/g, '');
+  const msg = encodeURIComponent(`Hello, here is your Asset Reliability Services project portal:\n${link}\nYour access PIN: ${pin}`);
+  return num ? `https://wa.me/${num}?text=${msg}` : `https://wa.me/?text=${msg}`;
+};
+
 /* status → brand colour, shared by map + badges */
 export const STATUS_HEX = { Planning: '#6b7280', Active: '#e2211c', 'On hold': '#e8930c', Completed: '#1fae6b' };
 export const STATUSES = ['Planning', 'Active', 'On hold', 'Completed'];

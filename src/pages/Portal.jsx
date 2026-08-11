@@ -6,7 +6,7 @@ import Icon from '../components/Icon';
 import { Spark, LineChart, BarChart, Ring } from '../components/Charts';
 import WorkMap from '../components/WorkMap';
 import { useAuth } from '../lib/auth';
-import { portalAccess, STATUS_HEX } from '../api';
+import { portalAccess, STATUS_HEX, photoSrc, clientReport } from '../api';
 import { brand, portalKpis, portalAssets, portalReports, assetDetail, portalAvailability, portalAlertsSeries, portalMonths, workOrdersSeed } from '../data';
 
 const money = (n) => 'US$' + Number(n || 0).toLocaleString();
@@ -22,11 +22,20 @@ function Progress({ v, color = 'var(--color-red-500)' }) {
 }
 
 /* ═══════════════ CLIENT PROJECT PORTAL ═══════════════ */
-function ProjectDetail({ p, onBack }) {
+function ProjectDetail({ p, code, pin, onBack }) {
   const spentPct = p.budget ? Math.round((p.spent / p.budget) * 100) : 0;
+  const [dl, setDl] = useState(false);
+  const download = async () => {
+    setDl(true);
+    try { await clientReport(code, pin, p.id, p.title.replace(/\s+/g, '-').toLowerCase()); toast.success('Report downloaded'); }
+    catch (e) { toast.error(e.message); } finally { setDl(false); }
+  };
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400 mb-5"><Icon name="arrowLeft" className="w-4 h-4" /> All projects</button>
+      <div className="flex items-center justify-between mb-5">
+        <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> All projects</button>
+        <button onClick={download} disabled={dl} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] disabled:opacity-60"><Icon name="download" className="w-4 h-4" /> {dl ? 'Preparing…' : 'Download report'}</button>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
         <div>
           <div className="flex items-center gap-3 mb-2"><StatusBadge s={p.status} /><span className="mono-label text-steel-500">{p.type}</span></div>
@@ -88,7 +97,7 @@ function ProjectDetail({ p, onBack }) {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {p.photos.map((ph) => (
               <figure key={ph.id} className="cover-frame aspect-[4/3] relative group">
-                <img src={ph.url} alt={ph.caption} loading="lazy" className="absolute inset-0 w-full h-full object-cover duotone" />
+                <img src={photoSrc(ph.url)} alt={ph.caption} loading="lazy" className="absolute inset-0 w-full h-full object-cover duotone" />
                 <div className="absolute inset-0 scrim-b" />
                 {ph.caption && <figcaption className="absolute bottom-0 inset-x-0 p-3 text-xs text-white">{ph.caption}</figcaption>}
               </figure>
@@ -100,7 +109,7 @@ function ProjectDetail({ p, onBack }) {
   );
 }
 
-function ClientPortal({ data, onExit }) {
+function ClientPortal({ data, code, pin, onExit }) {
   const [sel, setSel] = useState(null);
   const projects = data.projects || [];
   const active = projects.filter((p) => p.status === 'Active').length;
@@ -126,7 +135,7 @@ function ClientPortal({ data, onExit }) {
         </div>
 
         {selected ? (
-          <div className="panel p-5 sm:p-7"><ProjectDetail p={selected} onBack={() => setSel(null)} /></div>
+          <div className="panel p-5 sm:p-7"><ProjectDetail p={selected} code={code} pin={pin} onBack={() => setSel(null)} /></div>
         ) : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
@@ -184,7 +193,7 @@ function SignIn({ onClient }) {
     try {
       const data = await portalAccess(code.trim(), pin.trim());
       toast.success(`Welcome, ${data.client.name}`);
-      onClient(data);
+      onClient(data, code.trim(), pin.trim());
     } catch (err) {
       toast.error(err.message || 'Invalid code or PIN');
     } finally { setBusy(false); }
@@ -224,7 +233,7 @@ function SignIn({ onClient }) {
           <div className="flex items-center gap-3 my-6"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">ARS staff</span><span className="h-px flex-1 bg-steel-800" /></div>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => { signInGoogle(); }} className="flex items-center justify-center gap-2 bg-white text-steel-50 font-display text-sm rounded-md py-2.5 border-2 border-line hover:border-steel-400 transition"><Icon name="google" className="w-4 h-4" strokeWidth={0} /> Google</button>
-            <button onClick={() => { signInDemo(); }} className="btn btn-glass !py-2.5 justify-center">Demo dashboard</button>
+            <button onClick={() => { signInDemo(); }} className="btn btn-ghost !py-2.5 justify-center">Demo dashboard</button>
           </div>
           <p className="font-mono text-[0.66rem] text-steel-600 text-center mt-4">Staff sign-in opens the live monitoring dashboard demo</p>
         </div>
@@ -410,7 +419,7 @@ function Dashboard() {
               <div key={w.ref} className="panel p-4 sm:p-5 flex flex-wrap items-center gap-4">
                 <span className="grid place-items-center w-11 h-11 rounded bg-steel-800 shrink-0" style={{ color: prioColor[w.priority] }}><Icon name="clipboardcheck" className="w-5 h-5" /></span>
                 <div className="flex-1 min-w-[12rem]"><div className="flex items-center gap-2"><p className="font-mono text-xs text-red-400">{w.ref}</p><span className="font-mono text-[0.62rem] uppercase px-1.5 py-0.5 rounded" style={{ color: prioColor[w.priority], background: 'var(--color-steel-850)' }}>{w.priority}</span></div><p className="text-sm text-steel-100 mt-0.5">{w.title}</p><p className="mono-label text-steel-500 mt-1">Asset {w.asset} · due {w.due}</p></div>
-                <div className="flex items-center gap-3"><span className="font-mono text-[0.7rem] uppercase" style={{ color: w.status === 'Closed' ? 'var(--color-ok)' : 'var(--color-steel-300)' }}>{w.status}</span>{w.status !== 'Closed' && <button onClick={() => advance(w.ref)} className="btn btn-glass !py-2 !px-3 text-[0.75rem]">Advance <Icon name="arrowRight" className="w-3.5 h-3.5" /></button>}</div>
+                <div className="flex items-center gap-3"><span className="font-mono text-[0.7rem] uppercase" style={{ color: w.status === 'Closed' ? 'var(--color-ok)' : 'var(--color-steel-300)' }}>{w.status}</span>{w.status !== 'Closed' && <button onClick={() => advance(w.ref)} className="btn btn-ghost !py-2 !px-3 text-[0.75rem]">Advance <Icon name="arrowRight" className="w-3.5 h-3.5" /></button>}</div>
               </div>
             ))}
           </div>
@@ -423,8 +432,8 @@ function Dashboard() {
 
 export default function Portal() {
   const { user } = useAuth();
-  const [client, setClient] = useState(null);
-  if (client) return <ClientPortal data={client} onExit={() => setClient(null)} />;
+  const [session, setSession] = useState(null);
+  if (session) return <ClientPortal data={session.data} code={session.code} pin={session.pin} onExit={() => setSession(null)} />;
   if (user) return <Dashboard />;
-  return <SignIn onClient={setClient} />;
+  return <SignIn onClient={(data, code, pin) => setSession({ data, code, pin })} />;
 }

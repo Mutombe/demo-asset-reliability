@@ -4,3 +4,6 @@ sqlmodel==0.0.22
 psycopg2-binary==2.9.10
 PyJWT==2.10.1
 google-auth==2.37.0
+python-multipart==0.0.20
+Pillow==11.1.0
+fpdf2==2.8.2
