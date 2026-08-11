@@ -23,6 +23,10 @@ export default function App() {
     <AuthProvider>
       <CartProvider>
         <Routes>
+          {/* Full-screen apps — no public site chrome */}
+          <Route path="/portal" element={<Portal />} />
+          <Route path="/admin" element={<Admin />} />
+          {/* Public marketing site */}
           <Route element={<Layout />}>
             <Route path="/" element={<Home />} />
             <Route path="/services" element={<Services />} />
@@ -32,8 +36,6 @@ export default function App() {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/insights/:slug" element={<InsightDetail />} />
-            <Route path="/portal" element={<Portal />} />
-            <Route path="/admin" element={<Admin />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="*" element={<NotFound />} />

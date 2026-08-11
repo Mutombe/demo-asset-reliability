@@ -126,12 +126,26 @@ class Product(SQLModel, table=True):
     name: str
     sku: str = ""
     category: str = ""
+    blurb: str = ""
     price: float = 0
+    cost: float = 0
     stock: int = 0
     reorder: int = 5
+    location: str = "Main Warehouse"
     image: str = ""
     active: bool = True
     created_at: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class StockMovement(SQLModel, table=True):
+    __tablename__ = "ars_movement"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    product_id: int = Field(index=True, foreign_key="ars_product.id")
+    kind: str = "Adjust"          # Receive | Issue | Adjust
+    qty: int = 0                  # signed change actually applied
+    balance: int = 0             # stock after the movement
+    reason: str = ""
+    ref: str = ""
+    date: str = Field(default_factory=lambda: dt.date.today().isoformat())
 
 class SiteContent(SQLModel, table=True):
     __tablename__ = "ars_content"
@@ -215,6 +229,9 @@ def migrate():
     stmts = [
         "ALTER TABLE ars_photo ADD COLUMN IF NOT EXISTS mime VARCHAR",
         "ALTER TABLE ars_photo ADD COLUMN IF NOT EXISTS data BYTEA",
+        "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS blurb VARCHAR DEFAULT ''",
+        "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION DEFAULT 0",
+        "ALTER TABLE ars_product ADD COLUMN IF NOT EXISTS location VARCHAR DEFAULT 'Main Warehouse'",
     ]
     with engine.begin() as conn:
         for st in stmts:
@@ -669,7 +686,12 @@ def slugify(t):
 
 # ─────────────────────────── inventory ───────────────────────────
 def product_out(p):
-    return {k: getattr(p, k) for k in ["id", "name", "sku", "category", "price", "stock", "reorder", "image", "active"]}
+    d = {k: getattr(p, k) for k in ["id", "name", "sku", "category", "blurb", "price", "cost", "stock", "reorder", "location", "image", "active"]}
+    d["status"] = "Out of stock" if p.stock <= 0 else ("Low" if p.stock <= p.reorder else "In stock")
+    return d
+
+def movement_out(m):
+    return {k: getattr(m, k) for k in ["id", "product_id", "kind", "qty", "balance", "reason", "ref", "date"]}
 
 @app.get("/api/products")
 def public_products():
@@ -723,8 +745,39 @@ def del_product(pid: int, admin=Depends(require_admin)):
     with Session(engine) as s:
         p = s.get(Product, pid)
         if p:
+            for m in s.exec(select(StockMovement).where(StockMovement.product_id == pid)).all():
+                s.delete(m)
             s.delete(p); s.commit()
         return {"ok": True}
+
+class MovementBody(BaseModel):
+    kind: str = "Adjust"
+    qty: int = 0
+    reason: str = ""
+    ref: str = ""
+
+@app.post("/api/admin/products/{pid}/movement")
+def stock_movement(pid: int, body: MovementBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        p = s.get(Product, pid)
+        if not p:
+            raise HTTPException(404, "Not found")
+        before = p.stock
+        if body.kind == "Receive":
+            p.stock = before + abs(body.qty)
+        elif body.kind == "Issue":
+            p.stock = max(0, before - abs(body.qty))
+        else:  # Adjust to an absolute count
+            p.stock = max(0, int(body.qty))
+        m = StockMovement(product_id=pid, kind=body.kind, qty=p.stock - before, balance=p.stock, reason=body.reason, ref=body.ref)
+        s.add(p); s.add(m); s.commit(); s.refresh(p); s.refresh(m)
+        return {"product": product_out(p), "movement": movement_out(m)}
+
+@app.get("/api/admin/products/{pid}/movements")
+def list_movements(pid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        rows = s.exec(select(StockMovement).where(StockMovement.product_id == pid)).all()
+        return [movement_out(m) for m in sorted(rows, key=lambda m: m.id, reverse=True)]
 
 # ─────────────────────────── site content (CMS) ───────────────────────────
 def content_out(c):
@@ -787,17 +840,22 @@ def seed_admin(s: Session):
 def seed_products(s: Session):
     IMG = "https://demo-asset-reliability.onrender.com/img/photos"
     items = [
-        ("SKF Deep-Groove Bearing 6205-2RS", "BRG-6205", "Bearings", 18.50, 240, 40, f"{IMG}/motors.jpg"),
-        ("Triaxial Vibration Accelerometer", "SEN-VA3", "Condition Monitoring", 320.00, 26, 10, f"{IMG}/vibration.jpg"),
-        ("FLIR E8-XT Thermal Camera", "THM-E8XT", "Condition Monitoring", 3950.00, 6, 3, f"{IMG}/thermography.jpg"),
-        ("Ultrasonic Leak Detector", "UT-LD200", "Condition Monitoring", 1450.00, 9, 4, f"{IMG}/ultrasound.jpg"),
-        ("Lithium EP2 Grease Cartridge 400g", "LUB-EP2", "Lubrication", 6.75, 480, 80, f"{IMG}/fluids.jpg"),
-        ("2-Tonne Chain Lever Hoist", "LIF-CH2", "Lifting & Load", 210.00, 14, 5, f"{IMG}/lifting2.jpg"),
-        ("Webbing Lifting Sling 3T x 3m", "LIF-WS3", "Lifting & Load", 42.00, 60, 15, f"{IMG}/crane.jpg"),
-        ("Oil Sampling & Analysis Kit", "FLU-OSK", "Fluid Management", 85.00, 3, 6, f"{IMG}/fluids.jpg"),
+        ("SKF Deep-Groove Bearing 6205-2RS", "BRG-6205", "Bearings", 18.50, 11.20, 240, 40, f"{IMG}/motors.jpg", "Sealed radial ball bearing for electric motors and pumps.", "Main Warehouse"),
+        ("Triaxial Vibration Accelerometer", "SEN-VA3", "Condition Monitoring", 320.00, 205.00, 26, 10, f"{IMG}/vibration.jpg", "Industrial IEPE accelerometer for route-based vibration data.", "Main Warehouse"),
+        ("FLIR E8-XT Thermal Camera", "THM-E8XT", "Condition Monitoring", 3950.00, 2900.00, 6, 3, f"{IMG}/thermography.jpg", "320x240 infrared camera for electrical and mechanical surveys.", "Main Warehouse"),
+        ("Ultrasonic Leak Detector", "UT-LD200", "Condition Monitoring", 1450.00, 980.00, 9, 4, f"{IMG}/ultrasound.jpg", "Airborne ultrasound detector for leaks, valves and bearings.", "Main Warehouse"),
+        ("Lithium EP2 Grease Cartridge 400g", "LUB-EP2", "Lubrication", 6.75, 3.10, 480, 80, f"{IMG}/fluids.jpg", "Multipurpose extreme-pressure grease for general lubrication.", "Consumables Store"),
+        ("2-Tonne Chain Lever Hoist", "LIF-CH2", "Lifting & Load", 210.00, 132.00, 14, 5, f"{IMG}/lifting2.jpg", "Compact ratchet lever hoist for pulling and lifting.", "Main Warehouse"),
+        ("Webbing Lifting Sling 3T x 3m", "LIF-WS3", "Lifting & Load", 42.00, 24.00, 60, 15, f"{IMG}/crane.jpg", "Colour-coded polyester round sling, WLL 3 tonnes.", "Consumables Store"),
+        ("Oil Sampling & Analysis Kit", "FLU-OSK", "Fluid Management", 85.00, 47.00, 3, 6, f"{IMG}/fluids.jpg", "Vacuum pump, bottles and lab analysis for one oil sample.", "Consumables Store"),
     ]
-    for n, sku, cat, price, stock, reorder, img in items:
-        s.add(Product(name=n, sku=sku, category=cat, price=price, stock=stock, reorder=reorder, image=img))
+    made = []
+    for n, sku, cat, price, cost, stock, reorder, img, blurb, loc in items:
+        p = Product(name=n, sku=sku, category=cat, price=price, cost=cost, stock=stock, reorder=reorder, image=img, blurb=blurb, location=loc)
+        s.add(p); made.append(p)
+    s.commit()
+    for p in made:
+        s.add(StockMovement(product_id=p.id, kind="Receive", qty=p.stock, balance=p.stock, reason="Opening balance", ref="GRN-0001"))
     s.commit()
 
 def seed_content(s: Session):

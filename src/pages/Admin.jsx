@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../components/Icon';
 import WorkMap from '../components/WorkMap';
 import Modal from '../components/Modal';
@@ -11,6 +12,7 @@ import {
   toggleMilestone, addPhoto, getMap, STATUS_HEX, STATUSES,
   uploadPhoto, deletePhoto, notifyClient, adminReport, waLink, photoSrc,
   listProducts, createProductApi, updateProductApi, adjustStock, deleteProductApi,
+  stockMovement, productMovements,
   listContent, createContentApi, updateContentApi, deleteContentApi,
 } from '../api';
 
@@ -305,38 +307,153 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
 }
 
 /* ═══════════════ INVENTORY ═══════════════ */
-const EMPTY_PRODUCT = { name: '', sku: '', category: '', price: 0, stock: 0, reorder: 5, image: '' };
+const EMPTY_PRODUCT = { name: '', sku: '', category: '', blurb: '', price: 0, cost: 0, stock: 0, reorder: 5, location: 'Main Warehouse', image: '', active: true };
+const STOCK_HEX = { 'In stock': 'var(--color-ok)', 'Low': 'var(--color-warn)', 'Out of stock': 'var(--color-crit)' };
+const MOVE_KINDS = [['Receive', 'Stock received (+)'], ['Issue', 'Stock issued (−)'], ['Adjust', 'Set count to']];
+
+function Toggle({ on, onClick }) {
+  return <button type="button" onClick={onClick} role="switch" aria-checked={on} className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-red-500' : 'bg-steel-700'}`}><span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} /></button>;
+}
+function StockBadge({ s }) {
+  const c = STOCK_HEX[s] || 'var(--color-ok)';
+  return <span className="inline-flex items-center gap-1.5 font-mono text-[0.66rem] uppercase px-2 py-0.5 rounded" style={{ color: c, background: `${c}18` }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} /> {s}</span>;
+}
+
+/* ── product detail: catalogue fields + warehouse movements ── */
+function ProductManage({ product, onBack, reload }) {
+  const [p, setP] = useState(product);
+  const [saving, setSaving] = useState(false);
+  const [moves, setMoves] = useState([]);
+  const [mv, setMv] = useState({ kind: 'Receive', qty: '', reason: '', ref: '' });
+  const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
+
+  useEffect(() => { productMovements(p.id).then(setMoves).catch(() => {}); }, [p.id]);
+
+  const save = async () => {
+    setSaving(true);
+    try { const u = await updateProductApi(p.id, { ...p, price: Number(p.price) || 0, cost: Number(p.cost) || 0, reorder: Number(p.reorder) || 0 }); setP((x) => ({ ...x, ...u })); toast.success('Product saved'); reload(); }
+    catch (e) { toast.error(e.message); } finally { setSaving(false); }
+  };
+  const doMove = async () => {
+    const qty = Number(mv.qty);
+    if (!Number.isFinite(qty) || (mv.kind !== 'Adjust' && qty <= 0)) { toast.error('Enter a quantity'); return; }
+    try {
+      const r = await stockMovement(p.id, { kind: mv.kind, qty, reason: mv.reason, ref: mv.ref });
+      setP((x) => ({ ...x, ...r.product })); setMoves((m) => [r.movement, ...m]); setMv({ kind: mv.kind, qty: '', reason: '', ref: '' });
+      toast.success(`${mv.kind} recorded`); reload();
+    } catch (e) { toast.error(e.message); }
+  };
+  const remove = async () => { await deleteProductApi(p.id); toast('Product deleted'); reload(); onBack(); };
+  const margin = p.price && p.cost ? Math.round((1 - p.cost / p.price) * 100) : null;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400"><Icon name="arrowLeft" className="w-4 h-4" /> Inventory</button>
+        <div className="flex gap-2"><button onClick={remove} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button><button onClick={save} disabled={saving} className="btn btn-red !py-2.5">{saving ? 'Saving…' : 'Save changes'}</button></div>
+      </div>
+      <div className="flex items-center gap-4 mb-5">
+        <div className="w-16 h-16 rounded-lg overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
+        <div className="min-w-0"><h2 className="font-display text-xl text-steel-50 truncate">{p.name || 'New product'}</h2><p className="font-mono text-xs text-steel-500 mt-0.5">{p.sku || '—'} · {p.category || 'Uncategorised'}</p></div>
+        <div className="ml-auto text-right"><StockBadge s={p.status} /><p className="font-display text-2xl text-steel-50 tabnum mt-1">{p.stock} <span className="text-sm text-steel-400">in stock</span></p></div>
+      </div>
+
+      <div className="grid lg:grid-cols-[1.35fr_1fr] gap-5">
+        {/* catalogue / shop fields */}
+        <div className="panel p-5 sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display text-steel-50">Catalogue</h3>
+            <label className="flex items-center gap-2.5 text-sm text-steel-300"><span>Show in shop</span><Toggle on={p.active} onClick={() => set('active', !p.active)} /></label>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Name"><input className="input" value={p.name} onChange={(e) => set('name', e.target.value)} /></Field>
+            <Field label="SKU"><input className="input font-mono" value={p.sku} onChange={(e) => set('sku', e.target.value)} /></Field>
+            <Field label="Category"><input className="input" value={p.category} onChange={(e) => set('category', e.target.value)} /></Field>
+            <Field label="Warehouse / location"><input className="input" value={p.location} onChange={(e) => set('location', e.target.value)} /></Field>
+            <Field label="Sell price (US$)"><input type="number" className="input" value={p.price} onChange={(e) => set('price', e.target.value)} /></Field>
+            <Field label="Unit cost (US$)"><input type="number" className="input" value={p.cost} onChange={(e) => set('cost', e.target.value)} /></Field>
+            <Field label="Reorder point"><input type="number" className="input" value={p.reorder} onChange={(e) => set('reorder', e.target.value)} /></Field>
+            <div className="grid content-end"><p className="field-label">Margin</p><p className="font-display text-lg text-steel-50 tabnum py-1.5">{margin != null ? `${margin}%` : '—'}</p></div>
+            <div className="sm:col-span-2"><Field label="Shop description"><textarea className="input min-h-[64px]" value={p.blurb} onChange={(e) => set('blurb', e.target.value)} /></Field></div>
+            <div className="sm:col-span-2"><Field label="Image URL"><input className="input" value={p.image} onChange={(e) => set('image', e.target.value)} placeholder="/img/photos/…" /></Field></div>
+          </div>
+        </div>
+
+        {/* warehouse movements */}
+        <div className="panel p-5 sm:p-6">
+          <h3 className="font-display text-steel-50 mb-1">Warehouse</h3>
+          <p className="text-sm text-steel-400 mb-4">Record stock in, out and counts. Every movement is logged.</p>
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Movement"><select className="input" value={mv.kind} onChange={(e) => setMv({ ...mv, kind: e.target.value })}>{MOVE_KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+              <Field label={mv.kind === 'Adjust' ? 'New count' : 'Quantity'}><input type="number" className="input" value={mv.qty} onChange={(e) => setMv({ ...mv, qty: e.target.value })} /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Reason"><input className="input" value={mv.reason} onChange={(e) => setMv({ ...mv, reason: e.target.value })} placeholder="e.g. PO delivery" /></Field>
+              <Field label="Reference"><input className="input" value={mv.ref} onChange={(e) => setMv({ ...mv, ref: e.target.value })} placeholder="GRN / job #" /></Field>
+            </div>
+            <button onClick={doMove} className="btn btn-red w-full !py-2.5">Record movement</button>
+          </div>
+          <div className="mt-5 pt-4 border-t border-steel-800">
+            <p className="mono-label text-steel-500 mb-3">Movement history</p>
+            <ol className="space-y-2.5 max-h-72 overflow-y-auto">
+              {moves.map((m) => (
+                <li key={m.id} className="flex items-center gap-3">
+                  <span className="grid place-items-center w-7 h-7 rounded shrink-0" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)', background: 'var(--color-steel-850)' }}><Icon name={m.qty >= 0 ? 'plus' : 'minus'} className="w-4 h-4" /></span>
+                  <div className="flex-1 min-w-0"><p className="text-sm text-steel-100">{m.kind} <span className="font-mono tabnum" style={{ color: m.qty >= 0 ? 'var(--color-ok)' : 'var(--color-crit)' }}>{m.qty >= 0 ? '+' : ''}{m.qty}</span> <span className="text-steel-500">→ {m.balance}</span></p><p className="text-xs text-steel-500 truncate">{m.date}{m.reason ? ` · ${m.reason}` : ''}{m.ref ? ` · ${m.ref}` : ''}</p></div>
+                </li>
+              ))}
+              {!moves.length && <p className="mono-label text-steel-500">No movements yet.</p>}
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Inventory() {
   const [items, setItems] = useState([]);
   const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_PRODUCT);
   const [loaded, setLoaded] = useState(false);
+  const [sel, setSel] = useState(null);
 
   const load = useCallback(async () => { try { setItems(await listProducts()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
   useEffect(() => { load(); }, [load]);
 
-  const filtered = items.filter((p) => `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(q.toLowerCase()));
-  const low = items.filter((p) => p.stock <= p.reorder).length;
-  const value = items.reduce((a, p) => a + p.price * p.stock, 0);
-  const bump = async (id, delta) => { try { const u = await adjustStock(id, delta); setItems((x) => x.map((p) => (p.id === id ? u : p))); } catch (e) { toast.error(e.message); } };
-  const patch = async (id, body) => { try { const u = await updateProductApi(id, body); setItems((x) => x.map((p) => (p.id === id ? u : p))); } catch (e) { toast.error(e.message); } };
-  const del = async (id) => { await deleteProductApi(id); setItems((x) => x.filter((p) => p.id !== id)); toast('Product removed'); };
+  const shown = items.filter((p) =>
+    `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(q.toLowerCase()) &&
+    (filter === 'all' || p.status === filter)
+  );
+  const inStock = items.filter((p) => p.status === 'In stock').length;
+  const low = items.filter((p) => p.status === 'Low').length;
+  const out = items.filter((p) => p.status === 'Out of stock').length;
+  const value = items.reduce((a, p) => a + (p.cost || 0) * p.stock, 0);
   const create = async () => {
     if (!form.name) { toast.error('Product needs a name'); return; }
-    const p = await createProductApi({ ...form, price: Number(form.price) || 0, stock: Number(form.stock) || 0, reorder: Number(form.reorder) || 0 });
-    setItems([p, ...items]); setForm(EMPTY_PRODUCT); setAdding(false); toast.success('Product added');
+    const p = await createProductApi({ ...form, price: Number(form.price) || 0, cost: Number(form.cost) || 0, stock: Number(form.stock) || 0, reorder: Number(form.reorder) || 0 });
+    setForm(EMPTY_PRODUCT); setAdding(false); await load(); toast.success('Product added'); setSel(p);
   };
+
+  if (sel) return <ProductManage product={sel} onBack={() => { setSel(null); load(); }} reload={load} />;
 
   return (
     <>
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-5">
-        {[['SKUs', items.length, 'box'], ['Low stock', low, 'bell'], ['Stock value', money(value), 'analytics']].map(([l, v, ic]) => (
-          <div key={l} className="panel-800 ticked p-4 sm:p-5"><span className="grid place-items-center w-9 h-9 rounded bg-steel-800 text-red-500 mb-3"><Icon name={ic} className="w-5 h-5" /></span><p className="font-display text-xl sm:text-2xl text-steel-50 tabnum">{v}</p><p className="mono-label text-steel-500 mt-1">{l}</p></div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+        {[['SKUs', items.length, 'box', 'var(--color-steel-100)'], ['In stock', inStock, 'check', 'var(--color-ok)'], ['Low / out', `${low} / ${out}`, 'bell', 'var(--color-warn)'], ['Stock value (cost)', money(value), 'analytics', 'var(--color-steel-100)']].map(([l, v, ic, col]) => (
+          <div key={l} className="panel-800 ticked p-4 sm:p-5"><span className="grid place-items-center w-10 h-10 rounded bg-steel-800 text-red-500 mb-3"><Icon name={ic} className="w-5 h-5" /></span><p className="font-display text-xl sm:text-2xl tabnum" style={{ color: col }}>{v}</p><p className="mono-label text-steel-500 mt-1">{l}</p></div>
         ))}
       </div>
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <label className="relative flex-1"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" className="w-4 h-4" /></span><input value={q} onChange={(e) => setQ(e.target.value)} className="input !pl-9 w-full" placeholder="Search product, SKU or category…" /></label>
+        <div className="flex gap-2">
+          {[['all', 'All'], ['In stock', 'In stock'], ['Low', 'Low'], ['Out of stock', 'Out']].map(([v, l]) => (
+            <button key={v} onClick={() => setFilter(v)} className={`px-3 py-2 rounded-md font-mono text-[0.72rem] uppercase border transition-colors ${filter === v ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700 hover:border-steel-500'}`}>{l}</button>
+          ))}
+        </div>
         <button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5 shrink-0"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'New product'}</button>
       </div>
       {adding && (
@@ -344,37 +461,32 @@ function Inventory() {
           <Field label="Name"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label="SKU"><input className="input" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></Field>
           <Field label="Category"><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></Field>
-          <Field label="Price (US$)"><input type="number" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
-          <Field label="Stock"><input type="number" className="input" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} /></Field>
-          <Field label="Reorder at"><input type="number" className="input" value={form.reorder} onChange={(e) => setForm({ ...form, reorder: e.target.value })} /></Field>
+          <Field label="Sell price (US$)"><input type="number" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
+          <Field label="Unit cost (US$)"><input type="number" className="input" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} /></Field>
+          <Field label="Opening stock"><input type="number" className="input" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} /></Field>
+          <Field label="Reorder point"><input type="number" className="input" value={form.reorder} onChange={(e) => setForm({ ...form, reorder: e.target.value })} /></Field>
           <div className="sm:col-span-2"><Field label="Image URL"><input className="input" value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="/img/photos/…" /></Field></div>
-          <div className="flex items-end"><button onClick={create} className="btn btn-red w-full">Add product</button></div>
+          <div className="sm:col-span-3"><button onClick={create} className="btn btn-red">Add product</button></div>
         </div>
       )}
       <div className="panel overflow-hidden">
-        <div className="hidden md:grid grid-cols-[2.2fr_1.2fr_1fr_1.4fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Category</span><span>Price</span><span>Stock</span><span></span></div>
-        {filtered.map((p) => {
-          const lowp = p.stock <= p.reorder;
-          return (
-            <div key={p.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[2.2fr_1.2fr_1fr_1.4fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
-                <div className="min-w-0"><p className="text-sm text-steel-100 leading-tight truncate">{p.name}</p><p className="font-mono text-[0.68rem] text-steel-500">{p.sku || '—'} {lowp && <span className="text-[color:var(--color-warn)]">· LOW</span>}</p></div>
-              </div>
-              <span className="text-sm text-steel-400 hidden md:block truncate">{p.category}</span>
-              <div className="hidden md:block"><span className="font-mono text-sm text-steel-500">US$</span> <input defaultValue={p.price} onBlur={(e) => Number(e.target.value) !== p.price && patch(p.id, { price: Number(e.target.value) })} className="w-20 bg-transparent border-b border-steel-700 focus:border-red-500 outline-none font-mono text-sm text-steel-100 py-0.5" /></div>
-              <div className="flex items-center gap-2 justify-self-end md:justify-self-auto">
-                <button onClick={() => bump(p.id, -1)} className="grid place-items-center w-7 h-7 rounded bg-steel-800 text-steel-300 hover:text-red-400"><Icon name="minus" className="w-4 h-4" /></button>
-                <span className="font-mono text-sm tabnum w-10 text-center" style={{ color: lowp ? 'var(--color-warn)' : 'var(--color-steel-100)' }}>{p.stock}</span>
-                <button onClick={() => bump(p.id, 1)} className="grid place-items-center w-7 h-7 rounded bg-steel-800 text-steel-300 hover:text-red-400"><Icon name="plus" className="w-4 h-4" /></button>
-              </div>
-              <button onClick={() => del(p.id)} className="text-steel-500 hover:text-red-400 justify-self-end hidden md:block"><Icon name="x" className="w-4 h-4" /></button>
+        <div className="hidden md:grid grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Category</span><span>Shop</span><span>Price</span><span>Stock</span><span></span></div>
+        {shown.map((p) => (
+          <button key={p.id} onClick={() => setSel(p)} className="w-full text-left grid grid-cols-[1fr_auto] md:grid-cols-[2.4fr_1.1fr_0.8fr_0.9fr_1fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850 transition-colors">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
+              <div className="min-w-0"><p className="text-sm text-steel-100 leading-tight truncate">{p.name}</p><p className="font-mono text-[0.68rem] text-steel-500 truncate">{p.sku || '—'} · {p.location}</p><p className="text-xs text-steel-500 mt-0.5 md:hidden"><StockBadge s={p.status} /></p></div>
             </div>
-          );
-        })}
-        {loaded && filtered.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products{q ? ` match “${q}”` : ' yet'}.</p>}
+            <span className="text-sm text-steel-400 hidden md:block truncate">{p.category}</span>
+            <span className="hidden md:block">{p.active ? <span className="mono-label text-ok">Live</span> : <span className="mono-label text-steel-500">Hidden</span>}</span>
+            <span className="font-mono text-sm text-steel-100 hidden md:block">{money(p.price)}</span>
+            <div className="hidden md:flex items-center gap-2"><span className="font-mono text-sm tabnum" style={{ color: STOCK_HEX[p.status] }}>{p.stock}</span><StockBadge s={p.status} /></div>
+            <div className="flex items-center gap-2 justify-self-end"><span className="md:hidden font-mono text-sm tabnum text-steel-100">{p.stock}</span><Icon name="chevronRight" className="w-4 h-4 text-steel-500" /></div>
+          </button>
+        ))}
+        {loaded && shown.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products{q || filter !== 'all' ? ' match your filter' : ' yet'}.</p>}
       </div>
-      <p className="mono-label text-steel-500 mt-3">Edit price inline · use − / + to adjust stock · products marked LOW are at or below their reorder point.</p>
+      <p className="mono-label text-steel-500 mt-3">Open a product to edit the shop listing and record warehouse movements. “Live” = visible in the public shop.</p>
     </>
   );
 }
@@ -463,15 +575,26 @@ function ContentEditor({ data, onClose, onSave }) {
 }
 
 /* ═══════════════ CONSOLE ═══════════════ */
-const NAV_ITEMS = [['dashboard', 'Overview', 'overview'], ['user', 'Clients', 'clients'], ['box', 'Inventory', 'inventory'], ['file', 'Site', 'site']];
-const TAB_TITLE = { overview: 'Overview', clients: 'Clients', inventory: 'Inventory', site: 'Site content' };
+const NAV_GROUPS = [
+  { title: 'Operations', items: [['dashboard', 'Dashboard', 'overview'], ['user', 'Clients', 'clients']] },
+  { title: 'Commerce', items: [['box', 'Inventory', 'inventory'], ['file', 'Site content', 'site']] },
+];
+const TAB_META = {
+  overview: ['Dashboard', 'Live projects, portfolio value and the work map'],
+  clients: ['Clients', 'Portals, PINs and per-client project delivery'],
+  inventory: ['Inventory', 'Shop catalogue and warehouse stock control'],
+  site: ['Site content', 'Articles, case studies and videos on the public site'],
+};
+
 function Console({ admin, onOut }) {
   const [tab, setTab] = useState('overview');
   const [clients, setClients] = useState([]);
   const [pins, setPins] = useState([]);
-  const [sel, setSel] = useState(null); // full client detail
+  const [sel, setSel] = useState(null);
   const [nc, setNc] = useState({ name: '', contact: '', email: '' });
   const [creating, setCreating] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [drawer, setDrawer] = useState(false);
 
   const loadAll = useCallback(async () => {
     try { const [cs, mp] = await Promise.all([listClients(), getMap()]); setClients(cs); setPins(mp); }
@@ -481,7 +604,6 @@ function Console({ admin, onOut }) {
 
   const openClient = async (id) => { try { setSel(await getClient(id)); } catch (err) { toast.error(err.message); } };
   const reloadClient = async () => { if (!sel) return null; const c = await getClient(sel.id); setSel(c); return c; };
-
   const createC = async () => {
     if (!nc.name) { toast.error('Client needs a name'); return; }
     try { const c = await createClient(nc); setNc({ name: '', contact: '', email: '' }); setCreating(false); await loadAll(); toast.success(`${c.name} created · PIN ${c.pin}`); openClient(c.id); }
@@ -492,34 +614,78 @@ function Console({ admin, onOut }) {
   const totalProjects = clients.reduce((a, c) => a + c.projectCount, 0);
   const activePins = pins.filter((p) => p.status === 'Active').length;
   const totalValue = pins.reduce((a, p) => a + (p.budget || 0), 0);
+  const go = (id) => { setTab(id); setSel(null); setDrawer(false); };
+  const initials = (admin?.name || 'A').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const [title, desc] = sel ? [sel.name, 'Client delivery — projects, work history and portal access'] : TAB_META[tab];
+
+  const Sidebar = ({ mobile }) => (
+    <div className="flex flex-col h-full w-full" style={{ background: '#14161b' }}>
+      <div className="flex items-center h-16 px-4 shrink-0 border-b border-white/[0.06]">
+        <img src="/img/logo-light.png" alt="ARS" className={`w-auto ${collapsed && !mobile ? 'h-7 mx-auto' : 'h-8'}`} />
+      </div>
+      <nav className="flex-1 overflow-y-auto px-2.5 py-3">
+        {NAV_GROUPS.map((g) => (
+          <div key={g.title} className="mb-4">
+            {(!collapsed || mobile) && <p className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30">{g.title}</p>}
+            {g.items.map(([ic, lbl, id]) => {
+              const active = tab === id && !sel;
+              return (
+                <button key={id} onClick={() => go(id)} title={collapsed && !mobile ? lbl : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm mb-0.5 transition-colors ${active ? 'bg-white/[0.09] text-white font-medium' : 'text-white/60 hover:bg-white/[0.05] hover:text-white'}`}>
+                  <Icon name={ic} className="w-5 h-5 shrink-0" />
+                  {(!collapsed || mobile) && <span className="truncate flex-1 text-left">{lbl}</span>}
+                  {active && (!collapsed || mobile) && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+      <div className="px-3 py-3 border-t border-white/[0.06] shrink-0">
+        <div className={`flex items-center gap-2.5 ${collapsed && !mobile ? 'justify-center' : ''} mb-2`}>
+          <span className="grid place-items-center w-8 h-8 rounded-full bg-red-500 text-white text-[0.7rem] font-display shrink-0">{initials}</span>
+          {(!collapsed || mobile) && <div className="min-w-0 flex-1"><p className="text-sm text-white truncate leading-tight">{admin?.name || 'Admin'}</p><p className="text-[11px] text-white/40 truncate">{admin?.email || 'Administrator'}</p></div>}
+        </div>
+        {(!collapsed || mobile)
+          ? <button onClick={onOut} className="w-full text-sm text-white/70 border border-white/10 rounded-lg py-2 hover:bg-white/[0.06] hover:text-white transition">Sign out</button>
+          : <button onClick={onOut} title="Sign out" className="w-full grid place-items-center py-2 rounded-lg text-white/50 hover:bg-white/[0.06] hover:text-white"><Icon name="x" className="w-4 h-4" /></button>}
+        {!mobile && (
+          <button onClick={() => setCollapsed((v) => !v)} className="w-full flex items-center gap-3 rounded-lg px-2.5 py-2 mt-1 text-sm text-white/40 hover:bg-white/[0.05] hover:text-white">
+            <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} className="w-5 h-5 shrink-0" />{!collapsed && <span>Collapse</span>}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
-    <section className="pt-[62px] md:pt-[72px] bg-steel-950 min-h-screen">
-      <div className="flex">
-        <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-steel-900 border-r border-steel-800 min-h-[calc(100vh-72px)] sticky top-[72px] p-4">
-          <p className="mono-label text-steel-500 px-3 mb-3">Project console</p>
-          {NAV_ITEMS.map(([ic, lbl, id]) => (
-            <button key={id} onClick={() => { setTab(id); setSel(null); }} className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-display transition-colors mb-1 ${tab === id && !sel ? 'bg-red-500/12 text-red-400' : 'text-steel-300 hover:bg-steel-850 hover:text-steel-100'}`}><Icon name={ic} className="w-5 h-5" /> {lbl}</button>
-          ))}
-          <div className="mt-auto panel p-4">
-            <p className="mono-label text-steel-500">Signed in</p>
-            <p className="text-sm text-steel-100 mt-1 truncate">{admin?.name || 'Admin'}</p>
-            <button onClick={onOut} className="btn btn-ghost w-full mt-3 !py-2 text-[0.78rem]">Sign out</button>
-          </div>
-        </aside>
+    <div className="flex h-screen overflow-hidden" style={{ background: '#f4f5f7' }}>
+      <aside className={`hidden lg:block shrink-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-60'}`}><Sidebar /></aside>
+      <AnimatePresence>
+        {drawer && (
+          <motion.div className="lg:hidden fixed inset-0 z-[60] bg-black/50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDrawer(false)}>
+            <motion.aside className="absolute left-0 top-0 h-full w-64" initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 28, stiffness: 280 }} onClick={(e) => e.stopPropagation()}><Sidebar mobile /></motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <div className="flex-1 min-w-0 p-5 md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div><p className="mono-label text-red-400">Asset Reliability Services</p><h1 className="font-display text-2xl text-steel-50 mt-0.5">{sel ? sel.name : TAB_TITLE[tab]}</h1></div>
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="flex items-center gap-3 h-16 shrink-0 px-4 md:px-6 bg-white border-b border-[#e7e9ee]">
+          <button onClick={() => setDrawer(true)} className="lg:hidden grid place-items-center w-9 h-9 rounded-md text-steel-50 hover:bg-[#f4f5f7]"><Icon name="menu" className="w-5 h-5" /></button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {sel && <button onClick={() => setSel(null)} className="text-steel-400 hover:text-red-500"><Icon name="arrowLeft" className="w-4 h-4" /></button>}
+              <h1 className="font-display text-lg md:text-xl text-steel-50 truncate leading-tight">{title}</h1>
+            </div>
+            <p className="text-xs text-steel-400 truncate hidden sm:block">{desc}</p>
           </div>
-          {/* mobile nav */}
-          <div className="lg:hidden flex gap-2 overflow-x-auto no-scrollbar mb-6 -mx-1 px-1">
-            {NAV_ITEMS.map(([ic, lbl, id]) => (
-              <button key={id} onClick={() => { setTab(id); setSel(null); }} className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === id && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}><Icon name={ic} className="w-4 h-4" />{lbl}</button>
-            ))}
-            <button onClick={onOut} className="shrink-0 btn btn-ghost !py-2 !px-3 text-[0.78rem]">Exit</button>
+          <div className="ml-auto flex items-center gap-4">
+            <span className="hidden md:inline-flex items-center gap-1.5 text-[0.72rem] text-steel-400 font-mono"><span className="w-1.5 h-1.5 rounded-full animate-pulse-dot" style={{ background: 'var(--color-ok)' }} /> {API_BASE.replace('https://', '').replace('http://', '')}</span>
+            <span className="grid place-items-center w-9 h-9 rounded-full bg-red-500 text-white text-[0.72rem] font-display shrink-0">{initials}</span>
           </div>
+        </header>
 
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-7">
           {sel ? (
             <ClientDetail client={sel} onBack={() => setSel(null)} reloadClient={reloadClient} reloadAll={loadAll} />
           ) : tab === 'overview' ? (
@@ -529,7 +695,7 @@ function Console({ admin, onOut }) {
                   <div key={l} className="panel-800 ticked p-4 sm:p-5"><span className="grid place-items-center w-10 h-10 rounded bg-steel-800 text-red-500 mb-3"><Icon name={ic} className="w-5 h-5" /></span><p className="font-display text-2xl text-steel-50 tabnum">{v}</p><p className="mono-label text-steel-500 mt-1">{l}</p></div>
                 ))}
               </div>
-              <div className="panel p-2 mb-5"><WorkMap pins={pins} height={440} /></div>
+              <div className="panel p-2 mb-4"><WorkMap pins={pins} height={460} /></div>
               <div className="flex flex-wrap gap-3 items-center">
                 {STATUSES.map((s) => <span key={s} className="inline-flex items-center gap-1.5 mono-label text-steel-400"><span className="w-2.5 h-2.5 rounded-full" style={{ background: STATUS_HEX[s] }} /> {s}</span>)}
                 <span className="mono-label text-steel-600 ml-auto">Ring = % complete · click a pin for detail</span>
@@ -565,10 +731,9 @@ function Console({ admin, onOut }) {
               </div>
             </>
           )}
-          <p className="font-mono text-[0.68rem] text-steel-600 mt-8 text-center">Live console · connected to {API_BASE.replace('https://', '')}</p>
-        </div>
+        </main>
       </div>
-    </section>
+    </div>
   );
 }
 

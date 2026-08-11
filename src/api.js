@@ -37,6 +37,8 @@ export const listProducts = () => req('/api/admin/products', { auth: true });
 export const createProductApi = (body) => req('/api/admin/products', { method: 'POST', body, auth: true });
 export const updateProductApi = (id, body) => req(`/api/admin/products/${id}`, { method: 'PATCH', body, auth: true });
 export const adjustStock = (id, delta) => req(`/api/admin/products/${id}/stock`, { method: 'POST', body: { delta }, auth: true });
+export const stockMovement = (id, body) => req(`/api/admin/products/${id}/movement`, { method: 'POST', body, auth: true });
+export const productMovements = (id) => req(`/api/admin/products/${id}/movements`, { auth: true });
 export const deleteProductApi = (id) => req(`/api/admin/products/${id}`, { method: 'DELETE', auth: true });
 
 /* ── site content (CMS) ── */

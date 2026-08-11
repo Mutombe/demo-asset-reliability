@@ -120,7 +120,7 @@ function ClientPortal({ data, code, pin, onExit }) {
   const selected = projects.find((p) => p.id === sel);
 
   return (
-    <section className="pt-24 md:pt-28 pb-16 bg-steel min-h-screen relative">
+    <section className="pt-8 md:pt-10 pb-16 bg-steel min-h-screen relative">
       <div className="absolute inset-x-0 top-0 h-72 grad-steel -z-0" aria-hidden />
       <div className="relative shell">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
@@ -335,7 +335,7 @@ function Dashboard() {
   const TABS = [['overview', 'Asset health', 'gauge'], ['trends', 'Trends', 'analytics'], ['reports', 'Reports', 'file'], ['orders', 'Work orders', 'clipboardcheck']];
 
   return (
-    <section className="pt-24 md:pt-28 pb-16 bg-steel min-h-screen relative">
+    <section className="pt-8 md:pt-10 pb-16 bg-steel min-h-screen relative">
       <div className="absolute inset-x-0 top-0 h-72 grad-steel -z-0" aria-hidden />
       <div className="relative shell">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
