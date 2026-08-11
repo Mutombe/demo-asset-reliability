@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../components/Icon';
+import Modal from '../components/Modal';
 import { Spark, LineChart, BarChart, Ring } from '../components/Charts';
 import WorkMap from '../components/WorkMap';
 import { useAuth } from '../lib/auth';
@@ -177,10 +178,31 @@ function ClientPortal({ data, code, pin, onExit }) {
   );
 }
 
-/* ═══════════════ SIGN IN (client code + PIN, demo dashboard secondary) ═══════════════ */
+/* ═══════════════ BRANDED AUTH BACKDROP (behind the modal) ═══════════════ */
+export function AuthBackdrop({ title, sub, chips }) {
+  return (
+    <section className="fixed inset-0 bg-steel-950 overflow-hidden">
+      <img src="/img/photos/gallery4.jpg" alt="" className="absolute inset-0 w-full h-full object-cover opacity-40 img-rich duotone" />
+      <div className="absolute inset-0 scrim-steel" />
+      <div className="absolute inset-0 grid-blueprint opacity-50" />
+      <div className="absolute inset-0 glow-red opacity-60" />
+      <div className="relative h-full flex flex-col justify-end p-8 sm:p-14 max-w-2xl">
+        <img src="/img/logo-light.png" alt="ARS" className="h-10 w-auto mb-6" />
+        <h2 className="display-2 text-white max-w-md">{title}</h2>
+        <p className="lead !text-white/70 mt-4 max-w-sm">{sub}</p>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-7 font-mono text-[0.72rem] text-white/60">
+          {chips.map(([ic, t]) => <span key={t} className="inline-flex items-center gap-2"><Icon name={ic} className="w-3.5 h-3.5" /> {t}</span>)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════ CLIENT AUTH — MODAL (code + PIN) ═══════════════ */
 function SignIn({ onClient }) {
   const { signInGoogle, signInDemo } = useAuth();
   const loc = useLocation();
+  const nav = useNavigate();
   const preset = new URLSearchParams(loc.search).get('c') || '';
   const [code, setCode] = useState(preset);
   const [pin, setPin] = useState('');
@@ -200,45 +222,32 @@ function SignIn({ onClient }) {
   };
 
   return (
-    <section className="relative min-h-[100svh] grid lg:grid-cols-2 bg-steel-950">
-      <div className="relative hidden lg:block overflow-hidden">
-        <img src="/img/photos/gallery4.jpg" alt="" className="absolute inset-0 w-full h-full object-cover opacity-45 img-rich duotone" />
-        <div className="absolute inset-0 scrim-steel" />
-        <div className="absolute inset-0 grid-blueprint opacity-60" />
-        <div className="absolute inset-0 glow-red opacity-70" />
-        <div className="relative h-full flex flex-col justify-end p-14">
-          <img src="/img/logo-light.png" alt="ARS" className="h-11 w-auto mb-8" />
-          <h2 className="display-2 text-white max-w-md">Every job, <span className="text-red-400">on the record.</span></h2>
-          <p className="lead !text-white/70 mt-4 max-w-sm">Work history, live progress, site photos, costs and reports for every project we run for you — in one secure place.</p>
-          <div className="flex items-center gap-6 mt-8 font-mono text-[0.72rem] text-white/60">
-            <span className="inline-flex items-center gap-2"><Icon name="lock" className="w-3.5 h-3.5" /> PIN-protected</span>
-            <span className="inline-flex items-center gap-2"><Icon name="pin" className="w-3.5 h-3.5" /> Live map</span>
-            <span className="inline-flex items-center gap-2"><Icon name="download" className="w-3.5 h-3.5" /> Reports</span>
-          </div>
-        </div>
-      </div>
-      <div className="relative flex items-center justify-center px-6 py-24">
-        <div className="absolute inset-0 grid-fine opacity-30 lg:hidden" />
-        <div className="relative w-full max-w-sm">
-          <p className="kicker mb-4">Client portal</p>
+    <>
+      <AuthBackdrop
+        title={<>Every job, <span className="text-red-400">on the record.</span></>}
+        sub="Work history, live progress, site photos, costs and reports for every project we run for you — in one secure place."
+        chips={[['lock', 'PIN-protected'], ['pin', 'Live map'], ['download', 'Reports']]}
+      />
+      <Modal open onClose={() => nav('/')} maxW="max-w-md">
+        <div className="p-7 sm:p-8">
+          <p className="kicker mb-3">Client portal</p>
           <h1 className="display-3 text-steel-50">Access your projects</h1>
           <p className="text-steel-400 mt-2 text-sm">Enter the access code and 4-digit PIN from Asset Reliability Services.</p>
-          <form onSubmit={submit} className="mt-8 space-y-3">
+          <form onSubmit={submit} className="mt-6 space-y-3">
             <div><label className="field-label">Access code</label><input value={code} onChange={(e) => setCode(e.target.value)} className="input font-mono" placeholder="e.g. mimosa" autoCapitalize="none" /></div>
             <div><label className="field-label">4-digit PIN</label><input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" className="input font-mono text-center text-2xl tracking-[0.6em]" placeholder="••••" /></div>
             <button type="submit" disabled={busy} className="btn btn-red w-full !py-3.5 disabled:opacity-60">{busy ? 'Checking…' : 'Enter portal'}</button>
           </form>
           <p className="text-center text-sm text-steel-400 mt-4">No access code? <Link to="/contact" className="text-red-400 link-underline">Contact us</Link></p>
-
-          <div className="flex items-center gap-3 my-6"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">ARS staff</span><span className="h-px flex-1 bg-steel-800" /></div>
+          <div className="flex items-center gap-3 my-5"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">ARS staff</span><span className="h-px flex-1 bg-steel-800" /></div>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => { signInGoogle(); }} className="flex items-center justify-center gap-2 bg-white text-steel-50 font-display text-sm rounded-md py-2.5 border-2 border-line hover:border-steel-400 transition"><Icon name="google" className="w-4 h-4" strokeWidth={0} /> Google</button>
             <button onClick={() => { signInDemo(); }} className="btn btn-ghost !py-2.5 justify-center">Demo dashboard</button>
           </div>
-          <p className="font-mono text-[0.66rem] text-steel-600 text-center mt-4">Staff sign-in opens the live monitoring dashboard demo</p>
+          <p className="text-center text-sm text-steel-400 mt-4">ARS admin? <Link to="/admin" className="text-red-400 link-underline">Manage projects →</Link></p>
         </div>
-      </div>
-    </section>
+      </Modal>
+    </>
   );
 }
 

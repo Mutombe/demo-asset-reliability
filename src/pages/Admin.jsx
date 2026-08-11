@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import Icon from '../components/Icon';
 import WorkMap from '../components/WorkMap';
+import Modal from '../components/Modal';
+import { AuthBackdrop } from './Portal';
 import {
-  API_BASE, getToken, setToken, adminLogin, adminGoogle, listClients, getClient, createClient,
+  API_BASE, getToken, setToken, adminLogin, adminRegister, adminGoogle, listClients, getClient, createClient,
   regenPin, deleteClient, createProject, updateProject, deleteProject, addWorklog, addMilestone,
   toggleMilestone, addPhoto, getMap, STATUS_HEX, STATUSES,
   uploadPhoto, deletePhoto, notifyClient, adminReport, waLink, photoSrc,
+  listProducts, createProductApi, updateProductApi, adjustStock, deleteProductApi,
+  listContent, createContentApi, updateContentApi, deleteContentApi,
 } from '../api';
 
 const GOOGLE_CLIENT_ID = '961906050297-3taptq0frt5digsbi7tj0058v6g0sf19.apps.googleusercontent.com';
@@ -23,16 +27,21 @@ function StatusPill({ s }) {
   return <span className="inline-flex items-center gap-1.5 font-mono text-[0.66rem] uppercase px-2 py-0.5 rounded" style={{ color: c, background: `${c}18` }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} /> {s}</span>;
 }
 
-/* ═══════════════ LOGIN ═══════════════ */
+/* ═══════════════ ADMIN AUTH — MODAL (sign in / register + Google) ═══════════════ */
 function AdminLogin({ onIn }) {
+  const nav = useNavigate();
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault(); setBusy(true);
-    try { const r = await adminLogin(pass); setToken(r.token); onIn(r.admin); toast.success('Signed in'); }
-    catch (err) { toast.error(err.message || 'Wrong passcode'); }
-    finally { setBusy(false); }
+    try {
+      const r = mode === 'login' ? await adminLogin(email, pass) : await adminRegister(name, email, pass);
+      setToken(r.token); toast.success(mode === 'login' ? 'Signed in' : 'Account created'); onIn(r.admin);
+    } catch (err) { toast.error(err.message); } finally { setBusy(false); }
   };
 
   useEffect(() => {
@@ -48,32 +57,47 @@ function AdminLogin({ onIn }) {
           },
         });
         const el = document.getElementById('gbtn');
-        if (el) window.google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', width: 320, text: 'continue_with' });
-      } catch { /* origins not authorised — passcode still works */ }
+        if (el) window.google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', width: 336, text: 'continue_with' });
+      } catch { /* origins not authorised — passcode/password still works */ }
     };
-    if (document.getElementById(id)) { init(); return; }
+    if (document.getElementById(id)) { setTimeout(init, 60); return; }
     const s = document.createElement('script');
     s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true; s.id = id; s.onload = init;
     document.body.appendChild(s);
   }, [onIn]);
 
   return (
-    <section className="min-h-[100svh] grid place-items-center bg-steel-950 px-6 py-24">
-      <div className="w-full max-w-sm">
-        <img src="/img/logo-light.png" alt="ARS" className="h-10 mb-8" />
-        <p className="kicker mb-3">Admin console</p>
-        <h1 className="display-3 text-steel-50">Sign in to manage projects</h1>
-        <p className="text-steel-400 mt-2 text-sm">Clients, projects, work history and portal access.</p>
-        <div id="gbtn" className="mt-7 flex justify-center [color-scheme:light]" />
-        <div className="flex items-center gap-3 my-5"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">or passcode</span><span className="h-px flex-1 bg-steel-800" /></div>
-        <form onSubmit={submit} className="space-y-3">
-          <Field label="Admin passcode"><input value={pass} onChange={(e) => setPass(e.target.value)} type="password" className="input" placeholder="••••••••" /></Field>
-          <button type="submit" disabled={busy} className="btn btn-red w-full !py-3.5 disabled:opacity-60">{busy ? 'Signing in…' : 'Sign in'}</button>
-        </form>
-        <p className="font-mono text-[0.66rem] text-steel-600 text-center mt-5">Google sign-in requires this domain to be an authorised origin in the Google OAuth client.</p>
-        <p className="text-center text-sm text-steel-400 mt-3"><Link to="/portal" className="text-red-400 link-underline">Client portal →</Link></p>
-      </div>
-    </section>
+    <>
+      <AuthBackdrop
+        title={<>The reliability <span className="text-red-400">command centre.</span></>}
+        sub="Clients, deep project tracking, a live work map, inventory and your website content — all in one console."
+        chips={[['dashboard', 'Projects'], ['box', 'Inventory'], ['file', 'Site content']]}
+      />
+      <Modal open onClose={() => nav('/')} maxW="max-w-md">
+        <div className="p-7 sm:p-8">
+          <p className="kicker mb-3">Admin console</p>
+          <h1 className="display-3 text-steel-50">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+          <p className="text-steel-400 mt-2 text-sm">Manage projects, clients, inventory and site content.</p>
+
+          <div id="gbtn" className="mt-6 flex justify-center [color-scheme:light]" />
+          <div className="flex items-center gap-3 my-5"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">or email</span><span className="h-px flex-1 bg-steel-800" /></div>
+
+          <div className="flex gap-1 p-1 rounded-lg bg-steel-900 mb-4">
+            {[['login', 'Sign in'], ['register', 'Register']].map(([m, l]) => (
+              <button key={m} onClick={() => setMode(m)} className={`flex-1 py-2 rounded-md font-display text-sm transition-colors ${mode === m ? 'bg-red-500 text-white' : 'text-steel-400 hover:text-steel-100'}`}>{l}</button>
+            ))}
+          </div>
+
+          <form onSubmit={submit} className="space-y-3">
+            {mode === 'register' && <Field label="Full name"><input value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder="Your name" /></Field>}
+            <Field label="Email"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="input" placeholder="you@ars.co.zw" autoCapitalize="none" /></Field>
+            <Field label="Password"><input value={pass} onChange={(e) => setPass(e.target.value)} type="password" className="input" placeholder="••••••••" /></Field>
+            <button type="submit" disabled={busy} className="btn btn-red w-full !py-3.5 disabled:opacity-60">{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+          </form>
+          <p className="text-center text-sm text-steel-400 mt-4"><Link to="/portal" className="text-red-400 link-underline">Client portal →</Link></p>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -280,7 +304,167 @@ function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
   );
 }
 
+/* ═══════════════ INVENTORY ═══════════════ */
+const EMPTY_PRODUCT = { name: '', sku: '', category: '', price: 0, stock: 0, reorder: 5, image: '' };
+function Inventory() {
+  const [items, setItems] = useState([]);
+  const [q, setQ] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(EMPTY_PRODUCT);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => { try { setItems(await listProducts()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = items.filter((p) => `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(q.toLowerCase()));
+  const low = items.filter((p) => p.stock <= p.reorder).length;
+  const value = items.reduce((a, p) => a + p.price * p.stock, 0);
+  const bump = async (id, delta) => { try { const u = await adjustStock(id, delta); setItems((x) => x.map((p) => (p.id === id ? u : p))); } catch (e) { toast.error(e.message); } };
+  const patch = async (id, body) => { try { const u = await updateProductApi(id, body); setItems((x) => x.map((p) => (p.id === id ? u : p))); } catch (e) { toast.error(e.message); } };
+  const del = async (id) => { await deleteProductApi(id); setItems((x) => x.filter((p) => p.id !== id)); toast('Product removed'); };
+  const create = async () => {
+    if (!form.name) { toast.error('Product needs a name'); return; }
+    const p = await createProductApi({ ...form, price: Number(form.price) || 0, stock: Number(form.stock) || 0, reorder: Number(form.reorder) || 0 });
+    setItems([p, ...items]); setForm(EMPTY_PRODUCT); setAdding(false); toast.success('Product added');
+  };
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-5">
+        {[['SKUs', items.length, 'box'], ['Low stock', low, 'bell'], ['Stock value', money(value), 'analytics']].map(([l, v, ic]) => (
+          <div key={l} className="panel-800 ticked p-4 sm:p-5"><span className="grid place-items-center w-9 h-9 rounded bg-steel-800 text-red-500 mb-3"><Icon name={ic} className="w-5 h-5" /></span><p className="font-display text-xl sm:text-2xl text-steel-50 tabnum">{v}</p><p className="mono-label text-steel-500 mt-1">{l}</p></div>
+        ))}
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <label className="relative flex-1"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" className="w-4 h-4" /></span><input value={q} onChange={(e) => setQ(e.target.value)} className="input !pl-9 w-full" placeholder="Search product, SKU or category…" /></label>
+        <button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5 shrink-0"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'New product'}</button>
+      </div>
+      {adding && (
+        <div className="panel p-5 mb-4 grid sm:grid-cols-3 gap-3">
+          <Field label="Name"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+          <Field label="SKU"><input className="input" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></Field>
+          <Field label="Category"><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></Field>
+          <Field label="Price (US$)"><input type="number" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
+          <Field label="Stock"><input type="number" className="input" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} /></Field>
+          <Field label="Reorder at"><input type="number" className="input" value={form.reorder} onChange={(e) => setForm({ ...form, reorder: e.target.value })} /></Field>
+          <div className="sm:col-span-2"><Field label="Image URL"><input className="input" value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="/img/photos/…" /></Field></div>
+          <div className="flex items-end"><button onClick={create} className="btn btn-red w-full">Add product</button></div>
+        </div>
+      )}
+      <div className="panel overflow-hidden">
+        <div className="hidden md:grid grid-cols-[2.2fr_1.2fr_1fr_1.4fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Category</span><span>Price</span><span>Stock</span><span></span></div>
+        {filtered.map((p) => {
+          const lowp = p.stock <= p.reorder;
+          return (
+            <div key={p.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[2.2fr_1.2fr_1fr_1.4fr_auto] gap-3 md:gap-4 px-4 sm:px-5 py-3 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded overflow-hidden bg-steel-800 shrink-0">{p.image ? <img src={photoSrc(p.image)} alt="" className="w-full h-full object-cover duotone" /> : null}</div>
+                <div className="min-w-0"><p className="text-sm text-steel-100 leading-tight truncate">{p.name}</p><p className="font-mono text-[0.68rem] text-steel-500">{p.sku || '—'} {lowp && <span className="text-[color:var(--color-warn)]">· LOW</span>}</p></div>
+              </div>
+              <span className="text-sm text-steel-400 hidden md:block truncate">{p.category}</span>
+              <div className="hidden md:block"><span className="font-mono text-sm text-steel-500">US$</span> <input defaultValue={p.price} onBlur={(e) => Number(e.target.value) !== p.price && patch(p.id, { price: Number(e.target.value) })} className="w-20 bg-transparent border-b border-steel-700 focus:border-red-500 outline-none font-mono text-sm text-steel-100 py-0.5" /></div>
+              <div className="flex items-center gap-2 justify-self-end md:justify-self-auto">
+                <button onClick={() => bump(p.id, -1)} className="grid place-items-center w-7 h-7 rounded bg-steel-800 text-steel-300 hover:text-red-400"><Icon name="minus" className="w-4 h-4" /></button>
+                <span className="font-mono text-sm tabnum w-10 text-center" style={{ color: lowp ? 'var(--color-warn)' : 'var(--color-steel-100)' }}>{p.stock}</span>
+                <button onClick={() => bump(p.id, 1)} className="grid place-items-center w-7 h-7 rounded bg-steel-800 text-steel-300 hover:text-red-400"><Icon name="plus" className="w-4 h-4" /></button>
+              </div>
+              <button onClick={() => del(p.id)} className="text-steel-500 hover:text-red-400 justify-self-end hidden md:block"><Icon name="x" className="w-4 h-4" /></button>
+            </div>
+          );
+        })}
+        {loaded && filtered.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products{q ? ` match “${q}”` : ' yet'}.</p>}
+      </div>
+      <p className="mono-label text-steel-500 mt-3">Edit price inline · use − / + to adjust stock · products marked LOW are at or below their reorder point.</p>
+    </>
+  );
+}
+
+/* ═══════════════ SITE MANAGEMENT (CMS) ═══════════════ */
+const CONTENT_TYPES = ['Article', 'Case study', 'Video', 'Standard'];
+const EMPTY_CONTENT = { type: 'Article', title: '', excerpt: '', body: '', status: 'Draft', image: '', youtube: '' };
+function SiteManagement() {
+  const [items, setItems] = useState([]);
+  const [q, setQ] = useState('');
+  const [edit, setEdit] = useState(null); // content object or {} for new
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => { try { setItems(await listContent()); } catch (e) { toast.error(e.message); } finally { setLoaded(true); } }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = items.filter((c) => `${c.title} ${c.type}`.toLowerCase().includes(q.toLowerCase()));
+  const pub = items.filter((c) => c.status === 'Published').length;
+  const publishToggle = async (c) => { const u = await updateContentApi(c.id, { status: c.status === 'Published' ? 'Draft' : 'Published' }); setItems((x) => x.map((i) => (i.id === c.id ? u : i))); toast(u.status === 'Published' ? 'Published' : 'Unpublished'); };
+  const del = async (id) => { await deleteContentApi(id); setItems((x) => x.filter((c) => c.id !== id)); toast('Content removed'); };
+  const saveEdit = async (data) => {
+    if (!data.title) { toast.error('Title required'); return; }
+    if (data.id) { const u = await updateContentApi(data.id, data); setItems((x) => x.map((c) => (c.id === data.id ? u : c))); toast.success('Saved'); }
+    else { const c = await createContentApi(data); setItems([c, ...items]); toast.success('Created'); }
+    setEdit(null);
+  };
+  const statusColor = (s) => (s === 'Published' ? 'var(--color-ok)' : 'var(--color-steel-400)');
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-5">
+        {[['Items', items.length, 'file'], ['Published', pub, 'check'], ['Drafts', items.length - pub, 'clock']].map(([l, v, ic]) => (
+          <div key={l} className="panel-800 ticked p-4 sm:p-5"><span className="grid place-items-center w-9 h-9 rounded bg-steel-800 text-red-500 mb-3"><Icon name={ic} className="w-5 h-5" /></span><p className="font-display text-xl sm:text-2xl text-steel-50 tabnum">{v}</p><p className="mono-label text-steel-500 mt-1">{l}</p></div>
+        ))}
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <label className="relative flex-1"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" className="w-4 h-4" /></span><input value={q} onChange={(e) => setQ(e.target.value)} className="input !pl-9 w-full" placeholder="Search content…" /></label>
+        <button onClick={() => setEdit({ ...EMPTY_CONTENT })} className="btn btn-red !py-2.5 shrink-0"><Icon name="plus" className="w-4 h-4" /> New content</button>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-4">
+        {filtered.map((c) => (
+          <div key={c.id} className="panel overflow-hidden flex">
+            <div className="w-24 shrink-0 bg-steel-800 relative">{c.image ? <img src={photoSrc(c.image)} alt="" className="absolute inset-0 w-full h-full object-cover duotone" /> : null}{c.type === 'Video' && <span className="absolute inset-0 grid place-items-center text-white"><Icon name="play" className="w-6 h-6" /></span>}</div>
+            <div className="flex-1 min-w-0 p-4">
+              <div className="flex items-center gap-2 mb-1"><span className="mono-label text-red-400">{c.type}</span><span className="mono-label" style={{ color: statusColor(c.status) }}>· {c.status}</span></div>
+              <p className="text-sm text-steel-100 font-medium leading-tight line-clamp-2">{c.title}</p>
+              <div className="flex items-center gap-2 mt-3">
+                <button onClick={() => publishToggle(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">{c.status === 'Published' ? 'Unpublish' : 'Publish'}</button>
+                <button onClick={() => setEdit(c)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]">Edit</button>
+                <button onClick={() => del(c.id)} className="text-steel-500 hover:text-red-400 ml-auto"><Icon name="x" className="w-4 h-4" /></button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {loaded && filtered.length === 0 && <p className="mono-label text-steel-500 py-12 text-center sm:col-span-2">No content{q ? ` matches “${q}”` : ''}.</p>}
+      </div>
+      <p className="mono-label text-steel-500 mt-3">Published items appear on the public website; drafts stay hidden.</p>
+      <ContentEditor data={edit} onClose={() => setEdit(null)} onSave={saveEdit} />
+    </>
+  );
+}
+
+function ContentEditor({ data, onClose, onSave }) {
+  const [f, setF] = useState(data || EMPTY_CONTENT);
+  useEffect(() => { setF(data || EMPTY_CONTENT); }, [data]);
+  if (!data) return null;
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  return (
+    <Modal open onClose={onClose} maxW="max-w-lg">
+      <div className="p-6 sm:p-7">
+        <h3 className="font-display text-xl text-steel-50 mb-4">{f.id ? 'Edit content' : 'New content'}</h3>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Type"><select className="input" value={f.type} onChange={(e) => set('type', e.target.value)}>{CONTENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
+          <Field label="Status"><select className="input" value={f.status} onChange={(e) => set('status', e.target.value)}><option>Draft</option><option>Published</option></select></Field>
+          <div className="sm:col-span-2"><Field label="Title"><input className="input" value={f.title} onChange={(e) => set('title', e.target.value)} /></Field></div>
+          <div className="sm:col-span-2"><Field label="Excerpt"><textarea className="input min-h-[60px]" value={f.excerpt} onChange={(e) => set('excerpt', e.target.value)} /></Field></div>
+          {f.type === 'Video'
+            ? <div className="sm:col-span-2"><Field label="YouTube video ID"><input className="input font-mono" value={f.youtube} onChange={(e) => set('youtube', e.target.value)} placeholder="e.g. JFYd_UuAHa4" /></Field></div>
+            : <div className="sm:col-span-2"><Field label="Body"><textarea className="input min-h-[100px]" value={f.body} onChange={(e) => set('body', e.target.value)} /></Field></div>}
+          <div className="sm:col-span-2"><Field label="Image URL"><input className="input" value={f.image} onChange={(e) => set('image', e.target.value)} placeholder="/img/photos/…" /></Field></div>
+        </div>
+        <div className="flex gap-2 mt-5"><button onClick={onClose} className="btn btn-ghost flex-1 !py-2.5">Cancel</button><button onClick={() => onSave(f)} className="btn btn-red flex-1 !py-2.5">{f.id ? 'Save' : 'Create'}</button></div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ═══════════════ CONSOLE ═══════════════ */
+const NAV_ITEMS = [['dashboard', 'Overview', 'overview'], ['user', 'Clients', 'clients'], ['box', 'Inventory', 'inventory'], ['file', 'Site', 'site']];
+const TAB_TITLE = { overview: 'Overview', clients: 'Clients', inventory: 'Inventory', site: 'Site content' };
 function Console({ admin, onOut }) {
   const [tab, setTab] = useState('overview');
   const [clients, setClients] = useState([]);
@@ -314,7 +498,7 @@ function Console({ admin, onOut }) {
       <div className="flex">
         <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-steel-900 border-r border-steel-800 min-h-[calc(100vh-72px)] sticky top-[72px] p-4">
           <p className="mono-label text-steel-500 px-3 mb-3">Project console</p>
-          {[['dashboard', 'Overview', 'overview'], ['user', 'Clients', 'clients']].map(([ic, lbl, id]) => (
+          {NAV_ITEMS.map(([ic, lbl, id]) => (
             <button key={id} onClick={() => { setTab(id); setSel(null); }} className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-display transition-colors mb-1 ${tab === id && !sel ? 'bg-red-500/12 text-red-400' : 'text-steel-300 hover:bg-steel-850 hover:text-steel-100'}`}><Icon name={ic} className="w-5 h-5" /> {lbl}</button>
           ))}
           <div className="mt-auto panel p-4">
@@ -326,12 +510,14 @@ function Console({ admin, onOut }) {
 
         <div className="flex-1 min-w-0 p-5 md:p-8">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div><p className="mono-label text-red-400">Asset Reliability Services</p><h1 className="font-display text-2xl text-steel-50 mt-0.5">{sel ? sel.name : tab === 'overview' ? 'Overview' : 'Clients'}</h1></div>
-            <div className="flex items-center gap-2 lg:hidden">
-              <button onClick={() => { setTab('overview'); setSel(null); }} className={`px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === 'overview' && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>Overview</button>
-              <button onClick={() => { setTab('clients'); setSel(null); }} className={`px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === 'clients' && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>Clients</button>
-              <button onClick={onOut} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]">Exit</button>
-            </div>
+            <div><p className="mono-label text-red-400">Asset Reliability Services</p><h1 className="font-display text-2xl text-steel-50 mt-0.5">{sel ? sel.name : TAB_TITLE[tab]}</h1></div>
+          </div>
+          {/* mobile nav */}
+          <div className="lg:hidden flex gap-2 overflow-x-auto no-scrollbar mb-6 -mx-1 px-1">
+            {NAV_ITEMS.map(([ic, lbl, id]) => (
+              <button key={id} onClick={() => { setTab(id); setSel(null); }} className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === id && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}><Icon name={ic} className="w-4 h-4" />{lbl}</button>
+            ))}
+            <button onClick={onOut} className="shrink-0 btn btn-ghost !py-2 !px-3 text-[0.78rem]">Exit</button>
           </div>
 
           {sel ? (
@@ -349,6 +535,10 @@ function Console({ admin, onOut }) {
                 <span className="mono-label text-steel-600 ml-auto">Ring = % complete · click a pin for detail</span>
               </div>
             </>
+          ) : tab === 'inventory' ? (
+            <Inventory />
+          ) : tab === 'site' ? (
+            <SiteManagement />
           ) : (
             <>
               <div className="flex justify-between items-center mb-4"><p className="text-sm text-steel-400">{clients.length} client{clients.length !== 1 ? 's' : ''}</p><button onClick={() => setCreating((v) => !v)} className="btn btn-red !py-2.5"><Icon name={creating ? 'x' : 'plus'} className="w-4 h-4" /> {creating ? 'Cancel' : 'New client'}</button></div>

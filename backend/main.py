@@ -14,6 +14,9 @@ import io
 import random
 import string
 import smtplib
+import hashlib
+import hmac
+import base64
 import datetime as dt
 from email.message import EmailMessage
 from typing import Optional, List
@@ -109,6 +112,54 @@ def photo_out(ph: "Photo"):
     """Serialise a photo WITHOUT its binary blob (never send bytes as JSON)."""
     return {"id": ph.id, "project_id": ph.project_id, "url": ph.url, "caption": ph.caption}
 
+class AdminUser(SQLModel, table=True):
+    __tablename__ = "ars_admin"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = ""
+    email: str = Field(index=True, unique=True)
+    password_hash: str = ""
+    created_at: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class Product(SQLModel, table=True):
+    __tablename__ = "ars_product"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    sku: str = ""
+    category: str = ""
+    price: float = 0
+    stock: int = 0
+    reorder: int = 5
+    image: str = ""
+    active: bool = True
+    created_at: str = Field(default_factory=lambda: dt.date.today().isoformat())
+
+class SiteContent(SQLModel, table=True):
+    __tablename__ = "ars_content"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    type: str = "Article"
+    title: str = ""
+    slug: str = ""
+    excerpt: str = ""
+    body: str = ""
+    status: str = "Draft"
+    date: str = Field(default_factory=lambda: dt.date.today().isoformat())
+    image: str = ""
+    youtube: str = ""
+
+# ── password hashing (pbkdf2, stdlib — no native deps) ──
+def hash_pw(pw: str) -> str:
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, 120_000)
+    return base64.b64encode(salt).decode() + "$" + base64.b64encode(dk).decode()
+
+def verify_pw(pw: str, stored: str) -> bool:
+    try:
+        s, h = stored.split("$")
+        dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), base64.b64decode(s), 120_000)
+        return hmac.compare_digest(base64.b64encode(dk).decode(), h)
+    except Exception:
+        return False
+
 # ─────────────────────────── helpers ───────────────────────────
 def new_slug(n=6):
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=n))
@@ -177,9 +228,14 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
     migrate()
     with Session(engine) as s:
-        if s.exec(select(Client)).first():
-            return
-        seed(s)
+        if not s.exec(select(Client)).first():
+            seed(s)
+        if not s.exec(select(AdminUser)).first():
+            seed_admin(s)
+        if not s.exec(select(Product)).first():
+            seed_products(s)
+        if not s.exec(select(SiteContent)).first():
+            seed_content(s)
 
 @app.get("/")
 def root():
@@ -190,15 +246,37 @@ def health():
     return {"ok": True}
 
 # ── auth ──
+class RegisterBody(BaseModel):
+    name: str = ""
+    email: str
+    password: str
+
 class LoginBody(BaseModel):
-    passcode: str
+    email: str
+    password: str
+
+@app.post("/api/admin/register")
+def admin_register(body: RegisterBody):
+    email = body.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(400, "Enter a valid email address")
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    with Session(engine) as s:
+        if s.exec(select(AdminUser).where(AdminUser.email == email)).first():
+            raise HTTPException(400, "An account with that email already exists")
+        u = AdminUser(name=body.name.strip() or email.split("@")[0], email=email, password_hash=hash_pw(body.password))
+        s.add(u); s.commit(); s.refresh(u)
+        return {"token": make_token(u.email, u.name), "admin": {"name": u.name, "email": u.email}}
 
 @app.post("/api/admin/login")
 def admin_login(body: LoginBody):
-    if body.passcode != ADMIN_PASSCODE:
-        raise HTTPException(401, "Wrong passcode")
-    return {"token": make_token("admin@ars.co.zw", "ARS Admin"),
-            "admin": {"name": "ARS Admin", "email": "admin@ars.co.zw"}}
+    email = body.email.strip().lower()
+    with Session(engine) as s:
+        u = s.exec(select(AdminUser).where(AdminUser.email == email)).first()
+        if not u or not verify_pw(body.password, u.password_hash):
+            raise HTTPException(401, "Wrong email or password")
+        return {"token": make_token(u.email, u.name), "admin": {"name": u.name, "email": u.email}}
 
 class GoogleBody(BaseModel):
     credential: str
@@ -585,7 +663,157 @@ def admin_map(admin=Depends(require_admin)):
             out.append(d)
         return out
 
+def slugify(t):
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", (t or "").lower()).strip("-")[:60]
+
+# ─────────────────────────── inventory ───────────────────────────
+def product_out(p):
+    return {k: getattr(p, k) for k in ["id", "name", "sku", "category", "price", "stock", "reorder", "image", "active"]}
+
+@app.get("/api/products")
+def public_products():
+    with Session(engine) as s:
+        return [product_out(p) for p in s.exec(select(Product).where(Product.active == True)).all()]
+
+@app.get("/api/admin/products")
+def list_products(admin=Depends(require_admin)):
+    with Session(engine) as s:
+        return [product_out(p) for p in s.exec(select(Product)).all()]
+
+class ProductBody(BaseModel):
+    name: str
+    sku: str = ""
+    category: str = ""
+    price: float = 0
+    stock: int = 0
+    reorder: int = 5
+    image: str = ""
+    active: bool = True
+
+@app.post("/api/admin/products")
+def create_product(body: ProductBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        p = Product(**body.model_dump()); s.add(p); s.commit(); s.refresh(p)
+        return product_out(p)
+
+@app.patch("/api/admin/products/{pid}")
+def update_product_(pid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        p = s.get(Product, pid)
+        if not p:
+            raise HTTPException(404, "Not found")
+        for k, v in body.items():
+            if hasattr(p, k) and k != "id":
+                setattr(p, k, v)
+        s.add(p); s.commit(); s.refresh(p)
+        return product_out(p)
+
+@app.post("/api/admin/products/{pid}/stock")
+def adjust_stock(pid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        p = s.get(Product, pid)
+        if not p:
+            raise HTTPException(404, "Not found")
+        p.stock = max(0, p.stock + int(body.get("delta", 0))); s.add(p); s.commit(); s.refresh(p)
+        return product_out(p)
+
+@app.delete("/api/admin/products/{pid}")
+def del_product(pid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        p = s.get(Product, pid)
+        if p:
+            s.delete(p); s.commit()
+        return {"ok": True}
+
+# ─────────────────────────── site content (CMS) ───────────────────────────
+def content_out(c):
+    return {k: getattr(c, k) for k in ["id", "type", "title", "slug", "excerpt", "body", "status", "date", "image", "youtube"]}
+
+@app.get("/api/content")
+def public_content():
+    with Session(engine) as s:
+        return [content_out(c) for c in s.exec(select(SiteContent).where(SiteContent.status == "Published")).all()]
+
+@app.get("/api/admin/content")
+def list_content(admin=Depends(require_admin)):
+    with Session(engine) as s:
+        return [content_out(c) for c in s.exec(select(SiteContent)).all()]
+
+class ContentBody(BaseModel):
+    type: str = "Article"
+    title: str = ""
+    slug: str = ""
+    excerpt: str = ""
+    body: str = ""
+    status: str = "Draft"
+    image: str = ""
+    youtube: str = ""
+
+@app.post("/api/admin/content")
+def create_content(body: ContentBody, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        d = body.model_dump()
+        if not d.get("slug") and d.get("title"):
+            d["slug"] = slugify(d["title"])
+        c = SiteContent(**d); s.add(c); s.commit(); s.refresh(c)
+        return content_out(c)
+
+@app.patch("/api/admin/content/{cid}")
+def update_content(cid: int, body: dict = Body(...), admin=Depends(require_admin)):
+    with Session(engine) as s:
+        c = s.get(SiteContent, cid)
+        if not c:
+            raise HTTPException(404, "Not found")
+        for k, v in body.items():
+            if hasattr(c, k) and k != "id":
+                setattr(c, k, v)
+        s.add(c); s.commit(); s.refresh(c)
+        return content_out(c)
+
+@app.delete("/api/admin/content/{cid}")
+def del_content(cid: int, admin=Depends(require_admin)):
+    with Session(engine) as s:
+        c = s.get(SiteContent, cid)
+        if c:
+            s.delete(c); s.commit()
+        return {"ok": True}
+
 # ─────────────────────────── seed ───────────────────────────
+def seed_admin(s: Session):
+    s.add(AdminUser(name="ARS Admin", email="admin@ars.co.zw", password_hash=hash_pw(ADMIN_PASSCODE or "ARS-admin-2026")))
+    s.commit()
+
+def seed_products(s: Session):
+    IMG = "https://demo-asset-reliability.onrender.com/img/photos"
+    items = [
+        ("SKF Deep-Groove Bearing 6205-2RS", "BRG-6205", "Bearings", 18.50, 240, 40, f"{IMG}/motors.jpg"),
+        ("Triaxial Vibration Accelerometer", "SEN-VA3", "Condition Monitoring", 320.00, 26, 10, f"{IMG}/vibration.jpg"),
+        ("FLIR E8-XT Thermal Camera", "THM-E8XT", "Condition Monitoring", 3950.00, 6, 3, f"{IMG}/thermography.jpg"),
+        ("Ultrasonic Leak Detector", "UT-LD200", "Condition Monitoring", 1450.00, 9, 4, f"{IMG}/ultrasound.jpg"),
+        ("Lithium EP2 Grease Cartridge 400g", "LUB-EP2", "Lubrication", 6.75, 480, 80, f"{IMG}/fluids.jpg"),
+        ("2-Tonne Chain Lever Hoist", "LIF-CH2", "Lifting & Load", 210.00, 14, 5, f"{IMG}/lifting2.jpg"),
+        ("Webbing Lifting Sling 3T x 3m", "LIF-WS3", "Lifting & Load", 42.00, 60, 15, f"{IMG}/crane.jpg"),
+        ("Oil Sampling & Analysis Kit", "FLU-OSK", "Fluid Management", 85.00, 3, 6, f"{IMG}/fluids.jpg"),
+    ]
+    for n, sku, cat, price, stock, reorder, img in items:
+        s.add(Product(name=n, sku=sku, category=cat, price=price, stock=stock, reorder=reorder, image=img))
+    s.commit()
+
+def seed_content(s: Session):
+    IMG = "https://demo-asset-reliability.onrender.com/img/photos"
+    items = [
+        ("Article", "Why we say all failures are preventable", "The reliability mindset that turns unplanned downtime into a schedule.", "Published", f"{IMG}/vibration.jpg", ""),
+        ("Case study", "Mimosa Mine: 6 months, zero unplanned mill stops", "How a monthly vibration route caught three bearing faults before failure.", "Published", f"{IMG}/motors.jpg", ""),
+        ("Video", "Vibration analysis explained", "A two-minute primer on what our analysts actually measure.", "Published", f"{IMG}/vibration.jpg", "JFYd_UuAHa4"),
+        ("Article", "Vibration or thermography — which do you need?", "Choosing the right condition-monitoring technique per asset class.", "Draft", f"{IMG}/thermography.jpg", ""),
+        ("Standard", "Reading ISO 20816 vibration limits", "How the zones map to real maintenance decisions.", "Published", f"{IMG}/laser.jpg", ""),
+        ("Article", "Getting oil analysis right on site", "Sampling technique is 80% of a useful oil report.", "Draft", f"{IMG}/fluids.jpg", ""),
+    ]
+    for t, title, excerpt, status, img, yt in items:
+        s.add(SiteContent(type=t, title=title, slug=slugify(title), excerpt=excerpt, status=status, image=img, youtube=yt, body=excerpt))
+    s.commit()
+
 def seed(s: Session):
     IMG = "https://demo-asset-reliability.onrender.com/img/photos"
     demo = [

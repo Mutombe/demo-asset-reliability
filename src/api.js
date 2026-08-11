@@ -27,9 +27,23 @@ async function req(path, { method = 'GET', body, auth = false } = {}) {
 /* ── client portal ── */
 export const portalAccess = (code, pin) => req('/api/portal/access', { method: 'POST', body: { code, pin } });
 
-/* ── admin auth ── */
-export const adminLogin = (passcode) => req('/api/admin/login', { method: 'POST', body: { passcode } });
+/* ── admin auth (real accounts) ── */
+export const adminLogin = (email, password) => req('/api/admin/login', { method: 'POST', body: { email, password } });
+export const adminRegister = (name, email, password) => req('/api/admin/register', { method: 'POST', body: { name, email, password } });
 export const adminGoogle = (credential) => req('/api/auth/google', { method: 'POST', body: { credential } });
+
+/* ── inventory ── */
+export const listProducts = () => req('/api/admin/products', { auth: true });
+export const createProductApi = (body) => req('/api/admin/products', { method: 'POST', body, auth: true });
+export const updateProductApi = (id, body) => req(`/api/admin/products/${id}`, { method: 'PATCH', body, auth: true });
+export const adjustStock = (id, delta) => req(`/api/admin/products/${id}/stock`, { method: 'POST', body: { delta }, auth: true });
+export const deleteProductApi = (id) => req(`/api/admin/products/${id}`, { method: 'DELETE', auth: true });
+
+/* ── site content (CMS) ── */
+export const listContent = () => req('/api/admin/content', { auth: true });
+export const createContentApi = (body) => req('/api/admin/content', { method: 'POST', body, auth: true });
+export const updateContentApi = (id, body) => req(`/api/admin/content/${id}`, { method: 'PATCH', body, auth: true });
+export const deleteContentApi = (id) => req(`/api/admin/content/${id}`, { method: 'DELETE', auth: true });
 
 /* ── admin data ── */
 export const listClients = () => req('/api/admin/clients', { auth: true });
