@@ -1,235 +1,340 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import Icon from '../components/Icon';
-import { BarChart, Ring } from '../components/Charts';
-import { cmsStats, cmsContent, products, clients, money, cmsMonthly, cmsReports, adminSettingsSeed, portalMonths } from '../data';
+import WorkMap from '../components/WorkMap';
+import {
+  API_BASE, getToken, setToken, adminLogin, adminGoogle, listClients, getClient, createClient,
+  regenPin, deleteClient, createProject, updateProject, deleteProject, addWorklog, addMilestone,
+  toggleMilestone, addPhoto, getMap, STATUS_HEX, STATUSES,
+} from '../api';
 
-const NAVI = [['dashboard', 'Dashboard'], ['file', 'Content'], ['box', 'Products'], ['user', 'Clients'], ['analytics', 'Reports'], ['gear', 'Settings']];
-const STATUS_CYCLE = { Draft: 'Review', Review: 'Published', Published: 'Draft' };
-const statusChip = (s) => s === 'Published' ? 'text-ok' : s === 'Draft' ? 'text-steel-400' : 'text-warn';
+const GOOGLE_CLIENT_ID = '961906050297-3taptq0frt5digsbi7tj0058v6g0sf19.apps.googleusercontent.com';
+const money = (n) => 'US$' + Number(n || 0).toLocaleString();
+const portalLink = (slug) => `${window.location.origin}/portal?c=${slug}`;
+const copy = (t, msg) => { navigator.clipboard?.writeText(t); toast.success(msg || 'Copied'); };
 
-/* toggle switch */
-function Switch({ on, onClick }) {
+function Field({ label, children }) {
+  return <label className="block"><span className="field-label">{label}</span>{children}</label>;
+}
+function StatusPill({ s }) {
+  const c = STATUS_HEX[s] || '#e2211c';
+  return <span className="inline-flex items-center gap-1.5 font-mono text-[0.66rem] uppercase px-2 py-0.5 rounded" style={{ color: c, background: `${c}18` }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} /> {s}</span>;
+}
+
+/* ═══════════════ LOGIN ═══════════════ */
+function AdminLogin({ onIn }) {
+  const [pass, setPass] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true);
+    try { const r = await adminLogin(pass); setToken(r.token); onIn(r.admin); toast.success('Signed in'); }
+    catch (err) { toast.error(err.message || 'Wrong passcode'); }
+    finally { setBusy(false); }
+  };
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    const id = 'gsi-script';
+    const init = () => {
+      try {
+        window.google?.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: async (resp) => {
+            try { const r = await adminGoogle(resp.credential); setToken(r.token); onIn(r.admin); toast.success(`Welcome, ${r.admin.name}`); }
+            catch (err) { toast.error(err.message || 'Google sign-in failed'); }
+          },
+        });
+        const el = document.getElementById('gbtn');
+        if (el) window.google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', width: 320, text: 'continue_with' });
+      } catch { /* origins not authorised — passcode still works */ }
+    };
+    if (document.getElementById(id)) { init(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true; s.id = id; s.onload = init;
+    document.body.appendChild(s);
+  }, [onIn]);
+
   return (
-    <button onClick={onClick} role="switch" aria-checked={on} className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-red-500' : 'bg-steel-700'}`}>
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} />
-    </button>
+    <section className="min-h-[100svh] grid place-items-center bg-steel-950 px-6 py-24">
+      <div className="w-full max-w-sm">
+        <img src="/img/logo-light.png" alt="ARS" className="h-10 mb-8" />
+        <p className="kicker mb-3">Admin console</p>
+        <h1 className="display-3 text-steel-50">Sign in to manage projects</h1>
+        <p className="text-steel-400 mt-2 text-sm">Clients, projects, work history and portal access.</p>
+        <div id="gbtn" className="mt-7 flex justify-center [color-scheme:light]" />
+        <div className="flex items-center gap-3 my-5"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">or passcode</span><span className="h-px flex-1 bg-steel-800" /></div>
+        <form onSubmit={submit} className="space-y-3">
+          <Field label="Admin passcode"><input value={pass} onChange={(e) => setPass(e.target.value)} type="password" className="input" placeholder="••••••••" /></Field>
+          <button type="submit" disabled={busy} className="btn btn-red w-full !py-3.5 disabled:opacity-60">{busy ? 'Signing in…' : 'Sign in'}</button>
+        </form>
+        <p className="font-mono text-[0.66rem] text-steel-600 text-center mt-5">Google sign-in requires this domain to be an authorised origin in the Google OAuth client.</p>
+        <p className="text-center text-sm text-steel-400 mt-3"><Link to="/portal" className="text-red-400 link-underline">Client portal →</Link></p>
+      </div>
+    </section>
   );
 }
 
-export default function Admin() {
-  const [view, setView] = useState('Dashboard');
-  const [rows, setRows] = useState(cmsContent);
-  const [query, setQuery] = useState('');
-  const [settings, setSettings] = useState(adminSettingsSeed);
-  const [rtype, setRtype] = useState('All');
+/* ═══════════════ PROJECT MANAGE ═══════════════ */
+const EMPTY_PROJECT = { title: '', type: 'Condition monitoring', status: 'Planning', progress: 0, budget: 0, spent: 0, location: '', lat: '', lng: '', start_date: '', due_date: '', description: '' };
 
-  const q = query.toLowerCase();
-  const shownContent = useMemo(() => rows.filter((r) => r.title.toLowerCase().includes(q) || r.type.toLowerCase().includes(q)), [rows, q]);
-  const shownProducts = useMemo(() => products.filter((p) => p.name.toLowerCase().includes(q) || p.cat.toLowerCase().includes(q)), [q]);
+function ProjectManage({ project, onBack, reload }) {
+  const [p, setP] = useState(project);
+  const [saving, setSaving] = useState(false);
+  const [ml, setMl] = useState({ title: '', due: '' });
+  const [wl, setWl] = useState({ date: '', title: '', note: '', status: 'Logged' });
+  const [ph, setPh] = useState({ url: '', caption: '' });
+  const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
 
-  const addContent = () => {
-    const n = rows.filter((r) => r.title.startsWith('Untitled draft')).length;
-    setRows([{ title: `Untitled draft${n ? ' ' + (n + 1) : ''}`, type: 'Article', status: 'Draft', date: '11 Aug 2026' }, ...rows]);
-    setView('Content'); toast.success('Draft created');
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body = { ...p, progress: Number(p.progress) || 0, budget: Number(p.budget) || 0, spent: Number(p.spent) || 0,
+        lat: p.lat === '' || p.lat == null ? null : Number(p.lat), lng: p.lng === '' || p.lng == null ? null : Number(p.lng) };
+      const up = await updateProject(p.id, body); setP({ ...p, ...up }); toast.success('Project saved'); reload();
+    } catch (err) { toast.error(err.message); } finally { setSaving(false); }
   };
-  const cycle = (title) => setRows((rs) => rs.map((r) => r.title === title ? { ...r, status: STATUS_CYCLE[r.status] } : r));
-  const del = (title) => { setRows((rs) => rs.filter((r) => r.title !== title)); toast('Item deleted'); };
-  const toggle = (key) => setSettings((s) => s.map((x) => x.key === key ? { ...x, on: !x.on } : x));
+  const refresh = async () => { const c = await reload(); const fresh = c?.projects?.find((x) => x.id === p.id); if (fresh) setP(fresh); };
+  const doMilestone = async () => { if (!ml.title) return; await addMilestone(p.id, ml); setMl({ title: '', due: '' }); await refresh(); toast.success('Milestone added'); };
+  const doToggle = async (m) => { await toggleMilestone(m.id, !m.done); await refresh(); };
+  const doWorklog = async () => { if (!wl.title) return; await addWorklog(p.id, wl); setWl({ date: '', title: '', note: '', status: 'Logged' }); await refresh(); toast.success('Update logged'); };
+  const doPhoto = async () => { if (!ph.url) return; await addPhoto(p.id, ph); setPh({ url: '', caption: '' }); await refresh(); toast.success('Photo added'); };
+  const remove = async () => { await deleteProject(p.id); toast('Project deleted'); reload(); onBack(); };
 
-  const reportTypes = ['All', ...new Set(cmsReports.map((r) => r.type))];
-  const shownReports = rtype === 'All' ? cmsReports : cmsReports.filter((r) => r.type === rtype);
-  const byType = reportTypes.slice(1).map((t) => cmsReports.filter((r) => r.type === t).length);
+  return (
+    <div>
+      <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400 mb-5"><Icon name="arrowLeft" className="w-4 h-4" /> Back to client</button>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <h2 className="font-display text-xl text-steel-50">{p.title || 'Untitled project'}</h2>
+        <div className="flex gap-2"><button onClick={remove} className="btn btn-glass !py-2 !px-3 text-[0.78rem] hover:!text-red-500">Delete</button><button onClick={save} disabled={saving} className="btn btn-red !py-2.5">{saving ? 'Saving…' : 'Save changes'}</button></div>
+      </div>
+
+      {/* editable fields */}
+      <div className="panel p-5 sm:p-6 grid sm:grid-cols-2 gap-4 mb-5">
+        <Field label="Title"><input className="input" value={p.title} onChange={(e) => set('title', e.target.value)} /></Field>
+        <Field label="Type of work"><input className="input" value={p.type} onChange={(e) => set('type', e.target.value)} /></Field>
+        <Field label="Status"><select className="input" value={p.status} onChange={(e) => set('status', e.target.value)}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>
+        <Field label={`Progress — ${p.progress}%`}><input type="range" min="0" max="100" value={p.progress} onChange={(e) => set('progress', e.target.value)} className="w-full accent-red-500" /></Field>
+        <Field label="Contract value (US$)"><input type="number" className="input" value={p.budget} onChange={(e) => set('budget', e.target.value)} /></Field>
+        <Field label="Spent to date (US$)"><input type="number" className="input" value={p.spent} onChange={(e) => set('spent', e.target.value)} /></Field>
+        <Field label="Start date"><input type="date" className="input" value={p.start_date} onChange={(e) => set('start_date', e.target.value)} /></Field>
+        <Field label="Due date"><input type="date" className="input" value={p.due_date} onChange={(e) => set('due_date', e.target.value)} /></Field>
+        <Field label="Location"><input className="input" value={p.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. Zvishavane" /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Latitude"><input className="input" value={p.lat ?? ''} onChange={(e) => set('lat', e.target.value)} placeholder="-20.33" /></Field>
+          <Field label="Longitude"><input className="input" value={p.lng ?? ''} onChange={(e) => set('lng', e.target.value)} placeholder="30.07" /></Field>
+        </div>
+        <div className="sm:col-span-2"><Field label="Description"><textarea className="input min-h-[80px]" value={p.description} onChange={(e) => set('description', e.target.value)} /></Field></div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        {/* milestones */}
+        <div className="panel p-5">
+          <h3 className="font-display text-steel-50 mb-3">Milestones</h3>
+          <ul className="space-y-2 mb-3">
+            {(p.milestones || []).map((m) => (
+              <li key={m.id} className="flex items-center gap-3"><button onClick={() => doToggle(m)} className={`grid place-items-center w-5 h-5 rounded-full shrink-0 ${m.done ? 'bg-[color:var(--color-ok)] text-white' : 'bg-steel-800 text-steel-500 hover:text-red-400'}`}><Icon name="check" className="w-3 h-3" /></button><span className={`text-sm flex-1 ${m.done ? 'text-steel-300 line-through' : 'text-steel-200'}`}>{m.title}</span><span className="mono-label text-steel-500">{m.due}</span></li>
+            ))}
+          </ul>
+          <div className="flex gap-2"><input className="input !py-2 flex-1" placeholder="Milestone" value={ml.title} onChange={(e) => setMl({ ...ml, title: e.target.value })} /><input type="date" className="input !py-2 w-36" value={ml.due} onChange={(e) => setMl({ ...ml, due: e.target.value })} /><button onClick={doMilestone} className="btn btn-red !py-2 !px-3"><Icon name="plus" className="w-4 h-4" /></button></div>
+        </div>
+        {/* worklogs */}
+        <div className="panel p-5">
+          <h3 className="font-display text-steel-50 mb-3">Work history</h3>
+          <ol className="space-y-3 mb-3 max-h-56 overflow-y-auto">
+            {(p.worklogs || []).map((w) => (<li key={w.id} className="border-l-2 border-red-500 pl-3"><p className="mono-label text-red-400">{w.date} · {w.status}</p><p className="text-sm text-steel-100">{w.title}</p>{w.note && <p className="text-sm text-steel-400">{w.note}</p>}</li>))}
+          </ol>
+          <div className="space-y-2">
+            <div className="flex gap-2"><input type="date" className="input !py-2 w-36" value={wl.date} onChange={(e) => setWl({ ...wl, date: e.target.value })} /><input className="input !py-2 flex-1" placeholder="Update title" value={wl.title} onChange={(e) => setWl({ ...wl, title: e.target.value })} /></div>
+            <div className="flex gap-2"><input className="input !py-2 flex-1" placeholder="Note" value={wl.note} onChange={(e) => setWl({ ...wl, note: e.target.value })} /><button onClick={doWorklog} className="btn btn-red !py-2 !px-3"><Icon name="plus" className="w-4 h-4" /></button></div>
+          </div>
+        </div>
+        {/* photos */}
+        <div className="panel p-5 lg:col-span-2">
+          <h3 className="font-display text-steel-50 mb-3">Site photos</h3>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+            {(p.photos || []).map((x) => (<figure key={x.id} className="cover-frame aspect-square relative"><img src={x.url} alt={x.caption} className="absolute inset-0 w-full h-full object-cover duotone" /></figure>))}
+          </div>
+          <div className="flex gap-2"><input className="input !py-2 flex-1" placeholder="Image URL" value={ph.url} onChange={(e) => setPh({ ...ph, url: e.target.value })} /><input className="input !py-2 w-40" placeholder="Caption" value={ph.caption} onChange={(e) => setPh({ ...ph, caption: e.target.value })} /><button onClick={doPhoto} className="btn btn-red !py-2 !px-3"><Icon name="plus" className="w-4 h-4" /></button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ CLIENT DETAIL ═══════════════ */
+function ClientDetail({ client, onBack, reloadClient, reloadAll }) {
+  const [proj, setProj] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(EMPTY_PROJECT);
+
+  const create = async () => {
+    if (!form.title) { toast.error('Project needs a title'); return; }
+    const body = { ...form, progress: Number(form.progress) || 0, budget: Number(form.budget) || 0, spent: Number(form.spent) || 0,
+      lat: form.lat === '' ? null : Number(form.lat), lng: form.lng === '' ? null : Number(form.lng) };
+    await createProject(client.id, body); setForm(EMPTY_PROJECT); setAdding(false); await reloadClient(); reloadAll(); toast.success('Project created');
+  };
+
+  if (proj) return <ProjectManage project={proj} onBack={() => setProj(null)} reload={async () => { const c = await reloadClient(); return c; }} />;
+
+  return (
+    <div>
+      <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-steel-400 hover:text-red-400 mb-5"><Icon name="arrowLeft" className="w-4 h-4" /> All clients</button>
+      {/* client header + portal access */}
+      <div className="panel p-5 sm:p-6 mb-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><h2 className="font-display text-2xl text-steel-50">{client.name}</h2><p className="text-sm text-steel-400 mt-1">{client.contact} {client.email && `· ${client.email}`}</p></div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => copy(portalLink(client.slug), 'Portal link copied')} className="btn btn-glass !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /> Copy link</button>
+            <button onClick={async () => { const r = await regenPin(client.id); await reloadClient(); toast.success(`New PIN: ${r.pin}`); }} className="btn btn-glass !py-2 !px-3 text-[0.78rem]">New PIN</button>
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 mt-4">
+          <div className="panel-800 p-3 flex items-center justify-between"><div><p className="mono-label text-steel-500">Portal link</p><p className="font-mono text-xs text-steel-200 truncate max-w-[15rem]">{portalLink(client.slug)}</p></div><button onClick={() => copy(portalLink(client.slug))} className="text-steel-400 hover:text-red-400"><Icon name="chain" className="w-4 h-4" /></button></div>
+          <div className="panel-800 p-3 flex items-center justify-between"><div><p className="mono-label text-steel-500">4-digit PIN</p><p className="font-mono text-2xl text-steel-50 tracking-[0.35em] tabnum">{client.pin}</p></div><button onClick={() => copy(client.pin, 'PIN copied')} className="text-steel-400 hover:text-red-400"><Icon name="clipboardcheck" className="w-4 h-4" /></button></div>
+        </div>
+        <p className="mono-label text-steel-500 mt-3">Share the link + PIN with your client. They see only their own projects.</p>
+      </div>
+
+      {/* projects */}
+      <div className="flex items-center justify-between mb-3"><h3 className="font-display text-lg text-steel-50">Projects ({(client.projects || []).length})</h3><button onClick={() => setAdding((v) => !v)} className="btn btn-red !py-2.5"><Icon name={adding ? 'x' : 'plus'} className="w-4 h-4" /> {adding ? 'Cancel' : 'New project'}</button></div>
+
+      {adding && (
+        <div className="panel p-5 mb-4 grid sm:grid-cols-2 gap-3">
+          <Field label="Title"><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+          <Field label="Type of work"><input className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} /></Field>
+          <Field label="Status"><select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>
+          <Field label="Contract value (US$)"><input type="number" className="input" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} /></Field>
+          <Field label="Location"><input className="input" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3"><Field label="Latitude"><input className="input" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="-20.33" /></Field><Field label="Longitude"><input className="input" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="30.07" /></Field></div>
+          <Field label="Start date"><input type="date" className="input" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></Field>
+          <Field label="Due date"><input type="date" className="input" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></Field>
+          <div className="sm:col-span-2"><Field label="Description"><textarea className="input min-h-[70px]" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field></div>
+          <div className="sm:col-span-2"><button onClick={create} className="btn btn-red">Create project</button></div>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {(client.projects || []).map((p) => (
+          <button key={p.id} onClick={() => setProj(p)} className="panel lift p-5 text-left group">
+            <div className="flex items-center justify-between mb-2"><StatusPill s={p.status} /><span className="mono-label text-steel-500">{p.type}</span></div>
+            <h4 className="font-display text-steel-50 group-hover:text-red-400 transition-colors">{p.title}</h4>
+            <div className="flex items-center justify-between mt-3 mb-1.5"><span className="mono-label text-steel-500">{p.progress}%</span><span className="font-mono text-sm text-steel-100">{money(p.budget)}</span></div>
+            <div className="h-1.5 rounded-full bg-steel-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p.progress}%`, background: STATUS_HEX[p.status] }} /></div>
+            <p className="mono-label text-steel-500 mt-3">{(p.worklogs || []).length} updates · {(p.photos || []).length} photos · {(p.milestones || []).length} milestones</p>
+          </button>
+        ))}
+        {!(client.projects || []).length && !adding && <p className="mono-label text-steel-500 py-8">No projects yet. Add the first one.</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ CONSOLE ═══════════════ */
+function Console({ admin, onOut }) {
+  const [tab, setTab] = useState('overview');
+  const [clients, setClients] = useState([]);
+  const [pins, setPins] = useState([]);
+  const [sel, setSel] = useState(null); // full client detail
+  const [nc, setNc] = useState({ name: '', contact: '', email: '' });
+  const [creating, setCreating] = useState(false);
+
+  const loadAll = useCallback(async () => {
+    try { const [cs, mp] = await Promise.all([listClients(), getMap()]); setClients(cs); setPins(mp); }
+    catch (err) { if (/401|token/i.test(err.message)) onOut(); else toast.error(err.message); }
+  }, [onOut]);
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const openClient = async (id) => { try { setSel(await getClient(id)); } catch (err) { toast.error(err.message); } };
+  const reloadClient = async () => { if (!sel) return null; const c = await getClient(sel.id); setSel(c); return c; };
+
+  const createC = async () => {
+    if (!nc.name) { toast.error('Client needs a name'); return; }
+    try { const c = await createClient(nc); setNc({ name: '', contact: '', email: '' }); setCreating(false); await loadAll(); toast.success(`${c.name} created · PIN ${c.pin}`); openClient(c.id); }
+    catch (err) { toast.error(err.message); }
+  };
+  const delC = async (id, name) => { await deleteClient(id); await loadAll(); toast(`${name} removed`); };
+
+  const totalProjects = clients.reduce((a, c) => a + c.projectCount, 0);
+  const activePins = pins.filter((p) => p.status === 'Active').length;
+  const totalValue = pins.reduce((a, p) => a + (p.budget || 0), 0);
 
   return (
     <section className="pt-[62px] md:pt-[72px] bg-steel-950 min-h-screen">
       <div className="flex">
-        {/* sidebar */}
         <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-steel-900 border-r border-steel-800 min-h-[calc(100vh-72px)] sticky top-[72px] p-4">
-          <p className="mono-label text-steel-500 px-3 mb-3">Admin · CMS</p>
-          {NAVI.map(([ic, lbl]) => (
-            <button key={lbl} onClick={() => setView(lbl)} className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-display transition-colors mb-1 ${view === lbl ? 'bg-red-500/12 text-red-400' : 'text-steel-300 hover:bg-steel-850 hover:text-steel-100'}`}>
-              <Icon name={ic} className="w-5 h-5" /> {lbl}
-            </button>
+          <p className="mono-label text-steel-500 px-3 mb-3">Project console</p>
+          {[['dashboard', 'Overview', 'overview'], ['user', 'Clients', 'clients']].map(([ic, lbl, id]) => (
+            <button key={id} onClick={() => { setTab(id); setSel(null); }} className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-display transition-colors mb-1 ${tab === id && !sel ? 'bg-red-500/12 text-red-400' : 'text-steel-300 hover:bg-steel-850 hover:text-steel-100'}`}><Icon name={ic} className="w-5 h-5" /> {lbl}</button>
           ))}
           <div className="mt-auto panel p-4">
-            <p className="mono-label text-steel-500">Signed in as</p>
-            <p className="text-sm text-steel-100 mt-1">Admin</p>
-            <Link to="/portal" className="btn btn-ghost w-full mt-3 !py-2 text-[0.78rem]">Client portal</Link>
+            <p className="mono-label text-steel-500">Signed in</p>
+            <p className="text-sm text-steel-100 mt-1 truncate">{admin?.name || 'Admin'}</p>
+            <button onClick={onOut} className="btn btn-ghost w-full mt-3 !py-2 text-[0.78rem]">Sign out</button>
           </div>
         </aside>
 
-        {/* main */}
         <div className="flex-1 min-w-0 p-5 md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-            <div>
-              <p className="mono-label text-red-400">Content management</p>
-              <h1 className="font-display text-2xl text-steel-50 mt-0.5">{view}</h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" className="w-4 h-4" /></span>
-                <input value={query} onChange={(e) => setQuery(e.target.value)} className="input !py-2 !pl-9 w-36 sm:w-48" placeholder="Search…" />
-              </label>
-              <button onClick={addContent} className="btn btn-red !py-2.5"><Icon name="plus" className="w-4 h-4" /> <span className="hidden sm:inline">New</span></button>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div><p className="mono-label text-red-400">Asset Reliability Services</p><h1 className="font-display text-2xl text-steel-50 mt-0.5">{sel ? sel.name : tab === 'overview' ? 'Overview' : 'Clients'}</h1></div>
+            <div className="flex items-center gap-2 lg:hidden">
+              <button onClick={() => { setTab('overview'); setSel(null); }} className={`px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === 'overview' && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>Overview</button>
+              <button onClick={() => { setTab('clients'); setSel(null); }} className={`px-3 py-2 rounded-md text-[0.78rem] font-display border ${tab === 'clients' && !sel ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>Clients</button>
+              <button onClick={onOut} className="btn btn-glass !py-2 !px-3 text-[0.78rem]">Exit</button>
             </div>
           </div>
 
-          {/* mobile view switch */}
-          <div className="lg:hidden flex gap-2 overflow-x-auto no-scrollbar mb-6 -mx-1 px-1">
-            {NAVI.map(([ic, lbl]) => (
-              <button key={lbl} onClick={() => setView(lbl)} className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.78rem] font-display border ${view === lbl ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}><Icon name={ic} className="w-4 h-4" />{lbl}</button>
-            ))}
-          </div>
-
-          {view === 'Dashboard' && (
+          {sel ? (
+            <ClientDetail client={sel} onBack={() => setSel(null)} reloadClient={reloadClient} reloadAll={loadAll} />
+          ) : tab === 'overview' ? (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
-                {cmsStats.map((s) => (
-                  <div key={s.label} className="panel-800 ticked p-4 sm:p-5">
-                    <span className="grid place-items-center w-10 h-10 rounded bg-steel-800 text-red-500 mb-4"><Icon name={s.icon} className="w-5 h-5" /></span>
-                    <p className="font-display text-2xl sm:text-3xl text-steel-50 tabnum">{s.value}</p>
-                    <p className="mono-label text-steel-500 mt-1 line-clamp-1">{s.label}</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+                {[['Clients', clients.length, 'user'], ['Projects', totalProjects, 'dashboard'], ['Active on map', activePins, 'pin'], ['Portfolio value', money(totalValue), 'analytics']].map(([l, v, ic]) => (
+                  <div key={l} className="panel-800 ticked p-4 sm:p-5"><span className="grid place-items-center w-10 h-10 rounded bg-steel-800 text-red-500 mb-3"><Icon name={ic} className="w-5 h-5" /></span><p className="font-display text-2xl text-steel-50 tabnum">{v}</p><p className="mono-label text-steel-500 mt-1">{l}</p></div>
+                ))}
+              </div>
+              <div className="panel p-2 mb-5"><WorkMap pins={pins} height={440} /></div>
+              <div className="flex flex-wrap gap-3 items-center">
+                {STATUSES.map((s) => <span key={s} className="inline-flex items-center gap-1.5 mono-label text-steel-400"><span className="w-2.5 h-2.5 rounded-full" style={{ background: STATUS_HEX[s] }} /> {s}</span>)}
+                <span className="mono-label text-steel-600 ml-auto">Ring = % complete · click a pin for detail</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between items-center mb-4"><p className="text-sm text-steel-400">{clients.length} client{clients.length !== 1 ? 's' : ''}</p><button onClick={() => setCreating((v) => !v)} className="btn btn-red !py-2.5"><Icon name={creating ? 'x' : 'plus'} className="w-4 h-4" /> {creating ? 'Cancel' : 'New client'}</button></div>
+              {creating && (
+                <div className="panel p-5 mb-4 grid sm:grid-cols-3 gap-3">
+                  <Field label="Company name"><input className="input" value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} /></Field>
+                  <Field label="Contact"><input className="input" value={nc.contact} onChange={(e) => setNc({ ...nc, contact: e.target.value })} placeholder="+263 …" /></Field>
+                  <Field label="Email"><input className="input" value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} /></Field>
+                  <div className="sm:col-span-3"><button onClick={createC} className="btn btn-red">Create client + generate PIN</button></div>
+                </div>
+              )}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {clients.map((c) => (
+                  <div key={c.id} className="panel p-5">
+                    <div className="flex items-start justify-between"><div><h3 className="font-display text-lg text-steel-50">{c.name}</h3><p className="text-sm text-steel-400 mt-0.5">{c.contact || '—'}</p></div><span className="mono-label text-steel-500">{c.projectCount} proj</span></div>
+                    <div className="flex items-center justify-between mt-4 panel-800 p-2.5"><div><p className="mono-label text-steel-500">PIN</p><p className="font-mono text-lg text-steel-50 tracking-[0.3em]">{c.pin}</p></div><span className="font-mono text-[0.66rem] text-steel-500 truncate max-w-[8rem]">/portal?c={c.slug}</span></div>
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => openClient(c.id)} className="btn btn-red !py-2 flex-1 text-[0.78rem]">Manage</button>
+                      <button onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-glass !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
+                      <button onClick={() => delC(c.id, c.name)} className="btn btn-glass !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
+                    </div>
                   </div>
                 ))}
               </div>
-              <div className="grid lg:grid-cols-[1.5fr_1fr] gap-4 mb-4">
-                <div className="panel p-5 sm:p-6">
-                  <div className="flex items-center justify-between mb-4"><h3 className="font-display text-steel-50">Content published</h3><span className="mono-label text-steel-500">12 months</span></div>
-                  <BarChart data={cmsMonthly} labels={portalMonths} />
-                </div>
-                <div className="panel p-6">
-                  <h3 className="font-display text-lg text-steel-50 mb-4">Recent activity</h3>
-                  <ul className="space-y-4">
-                    {[['file', 'Article published', '“Why we say all failures are preventable”', '2h'], ['box', 'Product updated', 'Thermal imaging camera', '5h'], ['user', 'New client account', 'Mimosa Mine', '1d'], ['analytics', 'Report uploaded', 'Vibration route — Mill 2', '1d']].map(([ic, t, d, tm]) => (
-                      <li key={t} className="flex items-start gap-3">
-                        <span className="grid place-items-center w-8 h-8 rounded bg-steel-800 text-red-500 shrink-0"><Icon name={ic} className="w-4 h-4" /></span>
-                        <div className="flex-1 min-w-0"><p className="text-sm text-steel-100">{t}</p><p className="text-xs text-steel-500 truncate">{d}</p></div>
-                        <span className="mono-label text-steel-600">{tm}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <ContentTable rows={shownContent.slice(0, 5)} cycle={cycle} del={del} />
             </>
           )}
-
-          {view === 'Content' && <ContentTable rows={shownContent} cycle={cycle} del={del} full />}
-
-          {view === 'Products' && (
-            <div className="panel overflow-hidden">
-              <div className="hidden md:grid grid-cols-[2fr_1.2fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Product</span><span>Category</span><span>Price</span><span>Status</span><span></span></div>
-              {shownProducts.map((p) => (
-                <div key={p.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[2fr_1.2fr_1fr_1fr_auto] gap-3 px-4 sm:px-5 py-3.5 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850">
-                  <div className="flex items-center gap-3 min-w-0"><div className="w-9 h-9 rounded overflow-hidden bg-steel-800 shrink-0"><img src={p.image} alt="" className="w-full h-full object-cover duotone" /></div><div className="min-w-0"><p className="text-sm text-steel-100 leading-tight truncate">{p.name}</p><p className="text-xs text-steel-500 md:hidden">{p.cat} · {money(p.price)}</p></div></div>
-                  <span className="text-sm text-steel-400 hidden md:block">{p.cat}</span>
-                  <span className="font-mono text-sm text-steel-200 hidden md:block">{money(p.price)}</span>
-                  <span className="font-mono text-[0.7rem] uppercase text-ok hidden md:block">Live</span>
-                  <button onClick={() => toast('Edit product (demo)')} className="text-steel-400 hover:text-red-400 justify-self-end"><Icon name="wrench" className="w-4 h-4" /></button>
-                </div>
-              ))}
-              {shownProducts.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No products match “{query}”.</p>}
-            </div>
-          )}
-
-          {view === 'Clients' && (
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {clients.map((c) => (
-                <div key={c.name} className="panel p-5 flex flex-col items-center gap-3 text-center">
-                  <span className="grid place-items-center h-14 w-full bg-white rounded px-3"><img src={c.logo} alt={c.name} className="max-h-9 max-w-full object-contain" /></span>
-                  <p className="text-sm text-steel-100">{c.name}</p>
-                  <span className="mono-label text-ok">Active</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {view === 'Reports' && (
-            <div className="grid lg:grid-cols-[1fr_1.4fr] gap-4">
-              <div className="panel p-5 sm:p-6">
-                <h3 className="font-display text-steel-50 mb-4">Reports by discipline</h3>
-                <BarChart data={byType} labels={reportTypes.slice(1)} height={160} />
-                <div className="flex items-center gap-4 mt-5 pt-5 border-t border-steel-800">
-                  <Ring value={80} label="delivered" size={80} />
-                  <p className="text-sm text-steel-400">{cmsReports.length} reports issued this cycle. 4 of 5 delivered, 1 awaiting client action.</p>
-                </div>
-              </div>
-              <div className="panel overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-steel-800 flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="font-display text-steel-50">Delivered reports</h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {reportTypes.map((t) => (
-                      <button key={t} onClick={() => setRtype(t)} className={`px-2.5 py-1.5 rounded font-mono text-[0.68rem] uppercase border transition-colors ${rtype === t ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700'}`}>{t}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="hidden sm:grid grid-cols-[1fr_1.4fr_1fr_auto] gap-4 px-5 py-2.5 border-b border-steel-800 mono-label text-steel-500"><span>Ref</span><span>Client</span><span>Date</span><span></span></div>
-                {shownReports.map((r) => (
-                  <div key={r.ref} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_1.4fr_1fr_auto] gap-3 px-5 py-3.5 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850">
-                    <div className="min-w-0"><p className="font-mono text-xs text-red-400">{r.ref}</p><p className="text-sm text-steel-100 truncate sm:hidden">{r.client}</p><p className="text-xs text-steel-500 sm:hidden">{r.type} · {r.date}</p></div>
-                    <span className="text-sm text-steel-100 hidden sm:block truncate">{r.client}</span>
-                    <span className="font-mono text-xs text-steel-400 hidden sm:block">{r.date}</span>
-                    <button onClick={() => toast.success(`${r.ref} downloaded (demo)`)} className="grid place-items-center w-9 h-9 rounded bg-steel-800 text-steel-200 hover:text-red-400 justify-self-end"><Icon name="download" className="w-4 h-4" /></button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {view === 'Settings' && (
-            <div className="grid lg:grid-cols-2 gap-4">
-              <div className="panel p-5 sm:p-6">
-                <h3 className="font-display text-lg text-steel-50 mb-1">Notifications & security</h3>
-                <p className="text-sm text-steel-400 mb-5">Control how ARS and your clients are alerted.</p>
-                <ul className="space-y-4">
-                  {settings.map((s) => (
-                    <li key={s.key} className="flex items-start justify-between gap-4">
-                      <div><p className="text-sm text-steel-100">{s.label}</p><p className="text-xs text-steel-500 mt-0.5 max-w-xs">{s.desc}</p></div>
-                      <Switch on={s.on} onClick={() => toggle(s.key)} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="panel p-5 sm:p-6">
-                <h3 className="font-display text-lg text-steel-50 mb-1">Brand & workspace</h3>
-                <p className="text-sm text-steel-400 mb-5">Preview of the identity applied across the portal.</p>
-                <div className="rounded-lg overflow-hidden border border-steel-800">
-                  <div className="h-24 grad-red grid place-items-center"><img src="/img/logo-light.png" alt="ARS" className="h-9" /></div>
-                  <div className="p-4 bg-steel-900 space-y-3">
-                    <div className="flex items-center justify-between text-sm"><span className="text-steel-400">Primary colour</span><span className="inline-flex items-center gap-2 font-mono text-steel-100"><span className="w-4 h-4 rounded bg-red-500" /> #e2211c</span></div>
-                    <div className="flex items-center justify-between text-sm"><span className="text-steel-400">Workspace</span><span className="font-mono text-steel-100">ars.co.zw</span></div>
-                    <div className="flex items-center justify-between text-sm"><span className="text-steel-400">Plan</span><span className="font-mono text-ok">Enterprise</span></div>
-                    <button onClick={() => toast.success('Settings saved (demo)')} className="btn btn-red w-full !py-2.5 mt-2">Save changes</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <p className="font-mono text-[0.68rem] text-steel-600 mt-8 text-center">Demonstration admin panel · changes are in-session only</p>
+          <p className="font-mono text-[0.68rem] text-steel-600 mt-8 text-center">Live console · connected to {API_BASE.replace('https://', '')}</p>
         </div>
       </div>
     </section>
   );
 }
 
-function ContentTable({ rows, cycle, del, full }) {
-  return (
-    <div className="panel overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-steel-800 flex items-center justify-between"><h3 className="font-display text-steel-50">{full ? 'All content' : 'Latest content'}</h3><span className="mono-label text-steel-500">{rows.length} items</span></div>
-      <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-2.5 border-b border-steel-800 mono-label text-steel-500"><span>Title</span><span>Type</span><span>Status</span><span>Date</span><span></span></div>
-      {rows.map((r) => (
-        <div key={r.title} className="grid grid-cols-2 sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-3 px-4 sm:px-5 py-3.5 border-b border-steel-800 last:border-0 items-center hover:bg-steel-850">
-          <p className="text-sm text-steel-100 leading-tight col-span-2 sm:col-span-1">{r.title}</p>
-          <span className="text-sm text-steel-400">{r.type}</span>
-          <button onClick={() => cycle(r.title)} title="Click to change status" className={`font-mono text-[0.7rem] uppercase text-left ${statusChip(r.status)} hover:opacity-70`}>{r.status} ↻</button>
-          <span className="font-mono text-xs text-steel-500">{r.date}</span>
-          <button onClick={() => del(r.title)} className="text-steel-500 hover:text-red-400 justify-self-end" title="Delete"><Icon name="x" className="w-4 h-4" /></button>
-        </div>
-      ))}
-      {rows.length === 0 && <p className="mono-label text-steel-500 py-12 text-center">No content.</p>}
-    </div>
-  );
+export default function Admin() {
+  const [admin, setAdmin] = useState(getToken() ? { name: 'ARS Admin' } : null);
+  const signOut = () => { setToken(null); setAdmin(null); toast('Signed out'); };
+  return admin ? <Console admin={admin} onOut={signOut} /> : <AdminLogin onIn={setAdmin} />;
 }
