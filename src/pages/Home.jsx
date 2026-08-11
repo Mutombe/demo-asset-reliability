@@ -260,12 +260,12 @@ function Products() {
   return (
     <section className="section bg-mist">
       <div className="shell">
-        <div className="flex flex-wrap items-end justify-between gap-6 mb-10">
+        <div className="flex flex-wrap items-end justify-between gap-4 sm:gap-6 mb-7 sm:mb-10">
           <div className="max-w-xl">
             <Reveal><p className="kicker has-icon mb-5"><Icon name="cart" className="w-4 h-4" />The shop</p></Reveal>
             <Reveal delay={0.05}><h2 className="display-2 text-steel-50">Reliability products, <span className="text-red-500">delivered.</span></h2></Reveal>
           </div>
-          <Reveal delay={0.1}><Link to="/products" className="btn btn-navy"><Icon name="cart" className="w-4 h-4" /> Shop all products</Link></Reveal>
+          <Reveal delay={0.1}><Link to="/products" className="btn btn-navy w-full sm:w-auto justify-center"><Icon name="cart" className="w-4 h-4" /> Shop all products</Link></Reveal>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
           {list.map((p, i) => (

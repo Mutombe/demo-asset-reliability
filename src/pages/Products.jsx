@@ -46,31 +46,31 @@ export function ProductCard({ p }) {
         <img src={p.image} alt={p.name} loading="lazy"
           className="w-full h-full object-cover img-rich transition-transform duration-[1.1s] group-hover:scale-105"
           style={{ maskImage: COVER_FADE, WebkitMaskImage: COVER_FADE }} />
-        <div className="absolute top-4 left-4 flex flex-col items-start gap-1.5">
-          {p.tag && <span className="chip chip-red">{p.tag}</span>}
-          <span className="glass inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[0.6rem] uppercase tracking-[0.06em] font-medium text-white"><span className="w-1.5 h-1.5 rounded-full" style={{ background: out ? 'var(--color-crit)' : low ? 'var(--color-warn)' : 'var(--color-ok)' }} />{p.stock || 'In stock'}</span>
+        <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 flex flex-col items-start gap-1 sm:gap-1.5">
+          {p.tag && <span className="inline-flex items-center rounded-md sm:rounded-lg bg-red-500 text-white font-mono uppercase tracking-[0.05em] font-medium text-[0.55rem] sm:text-[0.66rem] px-1.5 sm:px-2.5 py-0.5 sm:py-1">{p.tag}</span>}
+          <span className="glass inline-flex items-center gap-1 sm:gap-1.5 rounded-md sm:rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1 font-mono text-[0.52rem] sm:text-[0.6rem] uppercase tracking-[0.05em] font-medium text-white"><span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full" style={{ background: out ? 'var(--color-crit)' : low ? 'var(--color-warn)' : 'var(--color-ok)' }} />{p.stock || 'In stock'}</span>
         </div>
-        <span className="absolute top-4 right-4 grid place-items-center w-12 h-12 rounded-2xl glass text-white"><Icon name={catIcon(p.cat)} className="w-7 h-7" /></span>
-        {/* quick-add — slides up on hover (desktop) */}
+        <span className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 grid place-items-center w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-2xl glass text-white"><Icon name={catIcon(p.cat)} className="w-4 h-4 sm:w-7 sm:h-7" /></span>
+        {/* quick-add — slides up on hover (desktop only; mobile has the Add button in-body) */}
         <button onClick={add} disabled={out} aria-label={`Add ${p.name} to cart`}
           className="hidden sm:flex absolute bottom-4 right-4 items-center gap-1.5 btn btn-red !py-2 !px-3.5 text-[0.78rem] opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 disabled:opacity-0">
           <Icon name="cart" className="w-4 h-4" /> Quick add
         </button>
       </div>
       {/* 3. body overlaps the fade */}
-      <div className="relative -mt-6 flex flex-1 flex-col px-6 pb-6">
-        <div className="flex items-center justify-between gap-2">
+      <div className="relative -mt-5 sm:-mt-6 flex flex-1 flex-col px-3.5 pb-3.5 sm:px-6 sm:pb-6">
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2">
           <p className="mono-label text-red-500 truncate">{p.brand || p.cat}</p>
-          {p.rating ? <Stars value={p.rating} /> : null}
+          {p.rating ? <Stars value={p.rating} className="shrink-0" /> : null}
         </div>
-        <h3 className="font-display font-semibold text-lg text-steel-50 leading-tight mt-1.5 flex-1 underline decoration-transparent group-hover:decoration-red-400 underline-offset-4 transition-colors">{p.name}</h3>
-        <p className="font-mono text-[0.64rem] text-steel-500 mt-2">{p.sku}</p>
-        <div className="flex items-end justify-between gap-2 mt-4 pt-4 bd-t-bold">
+        <h3 className="font-display font-semibold text-[0.9rem] sm:text-lg text-steel-50 leading-tight mt-1 sm:mt-1.5 flex-1 line-clamp-2 underline decoration-transparent group-hover:decoration-red-400 underline-offset-4 transition-colors">{p.name}</h3>
+        <p className="font-mono text-[0.58rem] sm:text-[0.64rem] text-steel-500 mt-1.5 sm:mt-2 truncate">{p.sku}</p>
+        <div className="flex flex-col items-stretch gap-2 mt-3 pt-3 sm:mt-4 sm:pt-4 bd-t-bold sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <span className="font-display font-bold text-2xl text-red-500 tabnum">{money(p.price)}</span>
-            <span className="block mono-label mt-0.5" style={{ color: out ? 'var(--color-crit)' : low ? 'var(--color-warn)' : 'var(--color-ok)' }}>{out ? 'Out of stock' : low ? 'Low stock — order soon' : 'In stock · ships 48h'}</span>
+            <span className="font-display font-bold text-lg sm:text-2xl text-red-500 tabnum">{money(p.price)}</span>
+            <span className="block mono-label mt-0.5 truncate" style={{ color: out ? 'var(--color-crit)' : low ? 'var(--color-warn)' : 'var(--color-ok)' }}>{out ? 'Out of stock' : low ? 'Low stock' : 'In stock · 48h'}</span>
           </div>
-          <button onClick={add} disabled={out} className="btn btn-steel !py-2.5 !px-4 text-[0.82rem] disabled:opacity-50 shrink-0"><Icon name="cart" className="w-4 h-4" /> Add</button>
+          <button onClick={add} disabled={out} className="btn btn-steel w-full sm:w-auto justify-center !py-2 sm:!py-2.5 !px-3 sm:!px-4 text-[0.75rem] sm:text-[0.82rem] disabled:opacity-50 shrink-0"><Icon name="cart" className="w-4 h-4" /> Add</button>
         </div>
       </div>
     </Link>
