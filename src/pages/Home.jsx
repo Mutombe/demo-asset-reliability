@@ -5,6 +5,7 @@ import { autoLink } from '../components/ContentLink';
 import { Reveal, CountUp, motion } from '../lib/motion';
 import { AnimatePresence } from 'framer-motion';
 import { brand, services, serviceCats, clients, stats, pillars, process, products, articles, aiTopics, portalAssets, portalKpis } from '../data';
+import { ProductCard } from './Products';
 
 const statusColor = { ok: 'var(--color-ok)', warn: 'var(--color-warn)', crit: 'var(--color-crit)' };
 const statusLabel = { ok: 'Healthy', warn: 'Watch', crit: 'Critical' };
@@ -201,11 +202,11 @@ function Monitoring() {
               <p className="kicker has-icon mb-4" style={{ color: 'var(--color-red-400)' }}><Icon name="waveform" className="w-4 h-4" />Condition monitoring</p>
               <h2 className="display-3 text-white max-w-sm">We read the machine before it breaks.</h2>
             </div>
-            {/* floating data chip */}
-            <div className="absolute top-5 right-5 bg-white rounded-2xl p-4 frame-bold w-40">
-              <p className="mono-label text-steel-400">GBX-031</p>
-              <p className="stat-num" style={{ fontSize: '2rem', color: 'var(--color-crit)' }}>9.4<span className="text-sm text-steel-400 font-mono ml-1">mm/s</span></p>
-              <p className="mono-label" style={{ color: 'var(--color-crit)' }}>Critical</p>
+            {/* floating live-alert pills — compact & translucent so the crew behind stays visible */}
+            <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5">
+              <span className="glass rounded-full px-3 py-1 font-mono text-[0.6rem] tracking-[0.08em] uppercase text-white/85">GBX-031</span>
+              <span className="glass rounded-full px-3 py-1 font-mono text-[0.85rem] font-semibold inline-flex items-baseline gap-1" style={{ color: '#ff6b66' }}>9.4<span className="text-[0.58rem] text-white/70 font-normal">mm/s</span></span>
+              <span className="rounded-full px-3 py-1 font-mono text-[0.56rem] uppercase tracking-[0.09em] text-white inline-flex items-center gap-1.5" style={{ background: 'var(--color-crit)' }}><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse-dot" />Critical</span>
             </div>
           </div>
         </Reveal>
@@ -228,16 +229,16 @@ function Monitoring() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <div className="grid grid-cols-3 gap-4 h-full">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 h-full">
               {portalKpis.slice(0, 2).map((k) => (
-                <div key={k.label} className="panel-800 p-5 flex flex-col justify-center">
-                  <p className="stat-num" style={{ fontSize: '2.2rem' }}>{k.value}</p>
-                  <p className="mono-label text-steel-400 mt-2">{k.label}</p>
+                <div key={k.label} className="panel-800 p-4 sm:p-5 flex flex-col justify-center">
+                  <p className="stat-num leading-none" style={{ fontSize: 'clamp(1.6rem, 7vw, 2.2rem)' }}>{k.value}</p>
+                  <p className="mono-label text-steel-400 mt-2 leading-tight">{k.label}</p>
                 </div>
               ))}
-              <Link to="/portal" className="group grad-red rounded-[var(--radius-md)] p-5 flex flex-col justify-between text-white relative overflow-hidden">
-                <p className="relative font-display text-lg leading-tight">Open the client portal</p>
-                <span className="relative arrow-btn arrow-outline self-end mt-4"><Icon name="arrowUpRight" className="w-5 h-5" /></span>
+              <Link to="/portal" className="group grad-red rounded-[var(--radius-md)] p-4 sm:p-5 flex flex-row sm:flex-col items-center sm:items-stretch justify-between gap-3 text-white relative overflow-hidden col-span-2 sm:col-span-1">
+                <p className="relative font-display text-base sm:text-lg leading-tight">Open the client portal</p>
+                <span className="relative arrow-btn arrow-outline shrink-0 sm:self-end sm:mt-4"><Icon name="arrowUpRight" className="w-5 h-5" /></span>
               </Link>
             </div>
           </Reveal>
@@ -260,21 +261,9 @@ function Products() {
           </div>
           <Reveal delay={0.1}><Link to="/products" className="btn btn-navy"><Icon name="cart" className="w-4 h-4" /> Shop all products</Link></Reveal>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
           {list.map((p, i) => (
-            <Reveal key={p.id} delay={(i % 4) * 0.05}>
-              <Link to="/products" className="group panel lift overflow-hidden block h-full flex flex-col">
-                <div className="relative aspect-[4/3] overflow-hidden">
-                  <img src={p.image} alt={p.name} loading="lazy" className="w-full h-full object-cover img-rich transition-transform duration-[1.1s] group-hover:scale-105" />
-                  {p.tag && <span className="absolute top-3.5 left-3.5 chip chip-red">{p.tag}</span>}
-                </div>
-                <div className="p-6 flex flex-col flex-1">
-                  <p className="mono-label text-steel-400">{p.cat}</p>
-                  <h3 className="font-display font-semibold text-[1.02rem] text-steel-50 leading-tight mt-1.5 flex-1 underline decoration-transparent group-hover:decoration-red-400 underline-offset-4 group-hover:text-red-500 transition-colors">{p.name}</h3>
-                  <p className="font-display font-bold text-xl text-red-500 mt-4">US${p.price.toLocaleString()}</p>
-                </div>
-              </Link>
-            </Reveal>
+            <Reveal key={p.id} delay={(i % 4) * 0.05} className="h-full"><ProductCard p={p} /></Reveal>
           ))}
         </div>
       </div>
