@@ -1227,7 +1227,7 @@ function Console({ admin, onOut, setAdmin }) {
     try { await deleteClient(id); cache.clients = null; delete cache.detail[id]; loadAll(); } catch (err) { setClients(snap); toast.error(err.message); }
   };
 
-  const clientsPg = usePaged(clients, 9);
+  const clientsPg = usePaged(clients, 12);
   const totalProjects = clients.reduce((a, c) => a + c.projectCount, 0);
   const activePins = pins.filter((p) => p.status === 'Active').length;
   const totalValue = pins.reduce((a, p) => a + (p.budget || 0), 0);
@@ -1343,26 +1343,38 @@ function Console({ admin, onOut, setAdmin }) {
                   <div className="sm:col-span-3"><button onClick={createC} className="btn btn-red">Create client + generate PIN</button></div>
                 </div>
               )}
-              {!loaded ? <SkeletonCards n={6} /> : (
+              {!loaded ? <SkeletonTable rows={8} /> : (
                 <>
-                <motion.div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" variants={listV} initial="hidden" animate="show">
-                  <AnimatePresence initial={false}>
-                    {clientsPg.slice.map((c) => (
-                      <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }}
-                        onMouseEnter={() => !c._pending && prefetch(c.id)}
-                        onClick={() => !c._pending && openClient(c.id)}
-                        className={`panel p-5 cursor-pointer hover:border-line-2 transition-colors ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
-                        <div className="flex items-start justify-between"><div><h3 className="font-display text-lg text-steel-50">{c.name}</h3><p className="text-sm text-steel-400 mt-0.5">{c.contact || '—'}</p></div>{c._pending ? <span className="mono-label text-red-400 inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</span> : <span className="mono-label text-steel-500">{c.projectCount} proj</span>}</div>
-                        <div className="flex items-center justify-between mt-4 panel-800 p-2.5"><div><p className="mono-label text-steel-500">PIN</p><p className="font-mono text-lg text-steel-50 tracking-[0.3em]">{c.pin}</p></div><span className="font-mono text-[0.66rem] text-steel-500 truncate max-w-[8rem]">/portal?c={c.slug}</span></div>
-                        <div className="flex gap-2 mt-3">
-                          <button onClick={(e) => { e.stopPropagation(); openClient(c.id); }} disabled={c._pending} className="btn btn-red !py-2 flex-1 text-[0.78rem] disabled:opacity-50">Manage</button>
-                          <button onClick={(e) => { e.stopPropagation(); copy(portalLink(c.slug), 'Link copied'); }} className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="chain" className="w-4 h-4" /></button>
-                          <button onClick={(e) => { e.stopPropagation(); delC(c.id, c.name); }} disabled={c._pending} className="btn btn-ghost !py-2 !px-3 text-[0.78rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </motion.div>
+                <div className="panel overflow-hidden">
+                  <div className="hidden md:grid grid-cols-[1.8fr_0.9fr_1.5fr_0.6fr_auto] gap-4 px-5 py-3 border-b border-steel-800 mono-label text-steel-500"><span>Client</span><span>PIN</span><span>Portal</span><span className="text-right">Projects</span><span className="text-right">Actions</span></div>
+                  <motion.div variants={listV} initial="hidden" animate="show">
+                    <AnimatePresence initial={false}>
+                      {clientsPg.slice.map((c) => (
+                        <motion.div key={c.id} layout variants={itemV} exit={{ opacity: 0, height: 0, transition: { duration: 0.2 } }}
+                          onMouseEnter={() => !c._pending && prefetch(c.id)}
+                          onClick={() => !c._pending && openClient(c.id)}
+                          className={`grid grid-cols-[1fr_auto] md:grid-cols-[1.8fr_0.9fr_1.5fr_0.6fr_auto] gap-x-4 gap-y-2 items-center px-4 sm:px-5 py-3.5 border-b border-steel-800 last:border-0 cursor-pointer hover:bg-steel-800/40 transition-colors ${c._pending ? 'shimmer-row opacity-70' : ''}`}>
+                          <div className="min-w-0"><p className="text-sm text-steel-100 truncate font-medium">{c.name}</p><p className="mono-label text-steel-500 truncate">{c.contact || '—'}</p></div>
+                          {c._pending ? (
+                            <span className="mono-label text-red-400 inline-flex items-center gap-1.5 justify-self-end md:justify-self-auto md:col-span-4"><span className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" /> Creating…</span>
+                          ) : (
+                            <>
+                              <span className="font-mono text-sm text-steel-100 tracking-[0.25em] justify-self-end md:justify-self-start">{c.pin}</span>
+                              <span className="font-mono text-[0.66rem] text-steel-500 truncate hidden md:block">/portal?c={c.slug}</span>
+                              <span className="font-mono text-sm text-steel-200 tabnum hidden md:block text-right">{c.projectCount}</span>
+                              <div className="flex gap-1.5 justify-self-end col-span-2 md:col-span-1 mt-1 md:mt-0" onClick={(e) => e.stopPropagation()}>
+                                <button onClick={() => openClient(c.id)} className="btn btn-red !py-1.5 !px-3 text-[0.72rem]">Manage</button>
+                                <button title="Copy portal link" onClick={() => copy(portalLink(c.slug), 'Link copied')} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem]"><Icon name="chain" className="w-4 h-4" /></button>
+                                <button title="Delete client" onClick={() => delC(c.id, c.name)} className="btn btn-ghost !py-1.5 !px-2.5 text-[0.72rem] hover:!text-red-500"><Icon name="x" className="w-4 h-4" /></button>
+                              </div>
+                            </>
+                          )}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </motion.div>
+                  {!clients.length && <p className="mono-label text-steel-500 py-12 text-center">No clients yet — create one to generate a portal PIN.</p>}
+                </div>
                 <Pagination page={clientsPg.page} total={clientsPg.total} setPage={clientsPg.setPage} count={clientsPg.count} label="clients" />
                 </>
               )}
