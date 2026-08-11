@@ -855,5 +855,13 @@ function Console({ admin, onOut }) {
 export default function Admin() {
   const [admin, setAdmin] = useState(getToken() ? { name: 'ARS Admin' } : null);
   const signOut = () => { setToken(null); setAdmin(null); toast('Signed out'); };
+  // The marketing site uses a large 22px root, which inflates every rem-based
+  // size (padding, gaps, modal width). The ERP wants a normal 16px root so
+  // components and modals are standard-sized. Scoped to the admin only.
+  useEffect(() => {
+    const el = document.documentElement, prev = el.style.fontSize;
+    el.style.fontSize = '16px';
+    return () => { el.style.fontSize = prev; };
+  }, []);
   return admin ? <Console admin={admin} onOut={signOut} /> : <AdminLogin onIn={setAdmin} />;
 }
