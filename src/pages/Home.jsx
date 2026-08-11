@@ -163,18 +163,21 @@ function Services() {
             <button key={c} onClick={() => setCat(c)} className={`px-4 py-2 rounded-xl font-mono text-[0.72rem] uppercase tracking-wide border transition-all ${cat === c ? 'bg-red-500 text-white border-red-500' : 'bg-white text-steel-400 border-line hover:border-steel-50 hover:text-steel-50'}`}>{c}</button>
           ))}
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
           {shown.map((s, i) => (
             <Reveal key={s.slug} delay={(i % 3) * 0.04} className="h-full">
-              <Link to="/services" className="group relative cover-frame lift block h-full aspect-[4/5] sm:aspect-[5/6]" style={{ borderRadius: 'var(--radius-md)' }}>
+              <Link to="/services" className="group relative cover-frame lift block h-full aspect-[3/4] sm:aspect-[5/6]" style={{ borderRadius: 'var(--radius-md)' }}>
                 <img src={s.image} alt={s.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover img-rich transition-transform duration-[1.1s] group-hover:scale-105" />
-                <div className="absolute inset-0 scrim-b" aria-hidden />
+                {/* legibility scrim — stronger on mobile where cards are small */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-[#08080a]/45 to-transparent sm:scrim-b" aria-hidden />
                 <div className="absolute inset-0 grad-red opacity-0 group-hover:opacity-20 transition-opacity duration-500" aria-hidden />
-                <span className="absolute top-5 left-5 grid place-items-center w-14 h-14 rounded-2xl glass text-white group-hover:bg-red-500 group-hover:border-red-500 transition-colors"><Icon name={s.icon} className="w-7 h-7" strokeWidth={1.5} /></span>
-                <span className="absolute top-5 right-5 arrow-btn arrow-static w-11 h-11 glass text-white group-hover:bg-white group-hover:text-steel-50 transition-colors"><Icon name="arrowUpRight" className="w-5 h-5" /></span>
-                <div className="absolute inset-x-0 bottom-0 p-5 sm:p-7">
-                  <p className="mono-label text-red-300">{s.tag}</p>
-                  <h3 className="font-display font-semibold text-lg sm:text-xl text-white leading-tight mt-2 underline decoration-transparent group-hover:decoration-red-400 underline-offset-4 transition-colors">{s.name}</h3>
+                {/* icon — smaller & tighter on mobile */}
+                <span className="absolute top-3 left-3 sm:top-5 sm:left-5 grid place-items-center w-10 h-10 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl glass text-white group-hover:bg-red-500 group-hover:border-red-500 transition-colors"><Icon name={s.icon} className="w-5 h-5 sm:w-7 sm:h-7" strokeWidth={1.5} /></span>
+                {/* decorative arrow: desktop only (no hover on mobile) */}
+                <span className="absolute top-5 right-5 arrow-btn arrow-static w-11 h-11 glass text-white group-hover:bg-white group-hover:text-steel-50 transition-colors hidden sm:grid"><Icon name="arrowUpRight" className="w-5 h-5" /></span>
+                <div className="absolute inset-x-0 bottom-0 p-3.5 sm:p-7">
+                  <p className="font-mono text-[0.6rem] sm:text-[0.7rem] tracking-[0.06em] uppercase text-red-300 leading-tight line-clamp-1">{s.tag}</p>
+                  <h3 className="font-display font-semibold text-[0.95rem] sm:text-xl text-white leading-snug mt-1.5 line-clamp-2 underline decoration-transparent group-hover:decoration-red-400 underline-offset-4 transition-colors">{s.name}</h3>
                 </div>
               </Link>
             </Reveal>

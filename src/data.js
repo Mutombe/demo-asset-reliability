@@ -614,6 +614,43 @@ export const cmsContent = [
   { title: 'Chain hoist 2-ton', type: 'Product', status: 'Published', date: '30 Jul 2026' },
 ];
 
+/* ---- PORTAL: richer condition-monitoring data (charts, history, work orders) ---- */
+// 12-month plant availability + open-alerts series for the Trends tab
+export const portalAvailability = [96.9, 97.2, 97.0, 97.6, 98.1, 97.8, 98.3, 98.0, 98.5, 98.2, 98.4, 98.4];
+export const portalAlertsSeries = [7, 6, 8, 5, 4, 6, 5, 4, 3, 5, 4, 3];
+export const portalMonths = ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+// per-asset detail: 10-point health trend, next service, thresholds, recommended action
+export const assetDetail = {
+  'MTR-014': { trend: [95, 96, 94, 96, 95, 97, 96, 96, 97, 96], next: '18 Sep 2026', limit: '4.5 mm/s', note: 'Baseline stable. Continue quarterly route monitoring.' },
+  'PMP-208': { trend: [88, 86, 84, 82, 80, 78, 77, 75, 74, 74], next: '22 Aug 2026', limit: '65 °C', note: 'Rising bearing temperature. Inspect lubrication and coupling alignment.' },
+  'GBX-031': { trend: [78, 72, 68, 61, 55, 50, 47, 44, 42, 41], next: '14 Aug 2026', limit: '7.1 mm/s', note: 'Gear-mesh fault developing fast. Schedule shutdown inspection within 2 weeks.' },
+  'TRF-002': { trend: [93, 92, 93, 91, 92, 90, 91, 91, 90, 91], next: '02 Oct 2026', limit: '20 ppm', note: 'Moisture within limits. Next oil sample due Q4.' },
+  'CRN-119': { trend: [90, 89, 91, 88, 90, 89, 88, 89, 88, 88], next: '21 Jul 2027', limit: 'SWL 10 t', note: 'Statutory load test passed. Certificate valid 12 months.' },
+  'FAN-076': { trend: [82, 80, 78, 76, 74, 72, 70, 69, 68, 67], next: '20 Aug 2026', limit: '7.1 mm/s', note: 'Imbalance trending up. Plan on-site balancing at next stoppage.' },
+};
+export const workOrdersSeed = [
+  { id: 'WO-4471', asset: 'GBX-031', title: 'Conveyor Gearbox 7 — gear-mesh inspection', priority: 'High', status: 'Open', due: '14 Aug 2026' },
+  { id: 'WO-4468', asset: 'PMP-208', title: 'Slurry Pump A — lubrication & alignment check', priority: 'Medium', status: 'In progress', due: '22 Aug 2026' },
+  { id: 'WO-4455', asset: 'FAN-076', title: 'ID Fan 1 — on-site dynamic balancing', priority: 'Medium', status: 'Scheduled', due: '20 Aug 2026' },
+];
+
+/* ---- ADMIN: analytics + reports + settings ---- */
+export const cmsMonthly = [12, 9, 14, 11, 16, 13, 18, 15, 21, 17, 24, 22]; // items published / month
+export const cmsReports = [
+  { ref: 'RPT-0912', client: 'Mimosa Mine', type: 'Vibration', date: '05 Aug 2026', size: '3.2 MB', status: 'Delivered' },
+  { ref: 'RPT-0911', client: 'Hwange Colliery', type: 'Thermal', date: '02 Aug 2026', size: '5.1 MB', status: 'Action required' },
+  { ref: 'RPT-0908', client: 'Zimplats', type: 'Oil', date: '28 Jul 2026', size: '1.8 MB', status: 'Delivered' },
+  { ref: 'RPT-0904', client: 'Delta Beverages', type: 'Lifting', date: '21 Jul 2026', size: '2.4 MB', status: 'Certified' },
+  { ref: 'RPT-0901', client: 'PPC Cement', type: 'Vibration', date: '17 Jul 2026', size: '3.9 MB', status: 'Delivered' },
+];
+export const adminSettingsSeed = [
+  { key: 'alerts', label: 'Critical asset alerts', desc: 'Notify account managers the moment an asset crosses a threshold.', on: true },
+  { key: 'weekly', label: 'Weekly client digest', desc: 'Email a condition-summary to every active client each Monday.', on: true },
+  { key: 'autopub', label: 'Auto-publish reviewed reports', desc: 'Release reports to the client portal once an analyst signs off.', on: false },
+  { key: 'twofa', label: 'Enforce two-factor sign-in', desc: 'Require 2FA for all admin and analyst accounts.', on: true },
+  { key: 'maint', label: 'Maintenance mode', desc: 'Show a maintenance notice on the public site and shop.', on: false },
+];
+
 export const payments = [
   { id: 'ecocash', label: 'EcoCash', logo: '/img/pay/ecocash.png' },
   { id: 'onemoney', label: 'OneMoney', logo: '/img/pay/one-money.png' },
