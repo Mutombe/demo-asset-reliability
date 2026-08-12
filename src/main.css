@@ -186,7 +186,7 @@ body { margin:0; font-family:var(--font-body); font-weight:400; color:var(--colo
   .grad-navy { background:linear-gradient(155deg, #000, var(--color-navy-900)); }
   .grad-red { background:linear-gradient(120deg, var(--color-red-600), var(--color-red-500)); }
   .grad-blue { background:linear-gradient(150deg, var(--color-red-600) 0%, var(--color-red-500) 100%); }
-  .font-hero { font-family:var(--font-hero); }
+  .font-hero { font-family:var(--font-hero); letter-spacing:-0.012em; }
   .grid-tech { background-image:linear-gradient(rgba(17,17,20,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,20,.045) 1px, transparent 1px); background-size:52px 52px; }
   .grid-tech-d { background-image:linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px); background-size:52px 52px; }
   .grid-fine { background-image:linear-gradient(rgba(17,17,20,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,20,.04) 1px, transparent 1px); background-size:16px 16px; }
