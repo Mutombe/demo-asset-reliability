@@ -253,7 +253,6 @@ export function AuthBackdrop({ title, sub, chips }) {
 
 /* ═══════════════ CLIENT AUTH — MODAL (code + PIN) ═══════════════ */
 function SignIn({ onClient }) {
-  const { signInGoogle, signInDemo } = useAuth();
   const loc = useLocation();
   const nav = useNavigate();
   const preset = new URLSearchParams(loc.search).get('c') || '';
@@ -291,13 +290,9 @@ function SignIn({ onClient }) {
             <div><label className="field-label">4-digit PIN</label><input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" className="input font-mono text-center text-2xl tracking-[0.6em]" placeholder="••••" /></div>
             <button type="submit" disabled={busy} className="btn btn-red w-full !py-3.5 disabled:opacity-60">{busy ? 'Checking…' : 'Enter portal'}</button>
           </form>
-          <p className="text-center text-sm text-steel-400 mt-4">No access code? <Link to="/contact" className="text-red-400 link-underline">Contact us</Link></p>
+          <p className="text-center text-sm text-steel-400 mt-4">No access code? <Link to="/contact" className="text-red-400 link-underline">Contact us</Link> and we'll set up your portal.</p>
           <div className="flex items-center gap-3 my-5"><span className="h-px flex-1 bg-steel-800" /><span className="mono-label text-steel-500">ARS staff</span><span className="h-px flex-1 bg-steel-800" /></div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => { signInGoogle(); }} className="flex items-center justify-center gap-2 bg-white text-steel-50 font-display text-sm rounded-md py-2.5 border-2 border-line hover:border-steel-400 transition"><Icon name="google" className="w-4 h-4" strokeWidth={0} /> Google</button>
-            <button onClick={() => { signInDemo(); }} className="btn btn-ghost !py-2.5 justify-center">Demo dashboard</button>
-          </div>
-          <p className="text-center text-sm text-steel-400 mt-4">ARS admin? <Link to="/admin" className="text-red-400 link-underline">Manage projects →</Link></p>
+          <Link to="/admin" className="btn btn-ghost w-full justify-center !py-2.5"><Icon name="lock" className="w-4 h-4" /> Staff sign in</Link>
         </div>
       </Modal>
     </>
@@ -493,9 +488,12 @@ function Dashboard() {
 }
 
 export default function Portal() {
-  const { user } = useAuth();
+  // The /portal route is EXCLUSIVELY the PIN-gated client portal.
+  // Any stale demo/staff session from the old public "Demo dashboard" button is cleared on mount
+  // so nobody lands in a generic dashboard without a client code + PIN.
+  const { user, signOut } = useAuth();
   const [session, setSession] = useState(null);
+  useEffect(() => { if (user) signOut(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (session) return <ClientPortal data={session.data} code={session.code} pin={session.pin} onExit={() => setSession(null)} />;
-  if (user) return <Dashboard />;
   return <SignIn onClient={(data, code, pin) => setSession({ data, code, pin })} />;
 }
