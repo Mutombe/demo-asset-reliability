@@ -152,6 +152,44 @@ export default function About() {
         </div>
       </section>
 
+      {/* ─────────────── DOWNLOADS ─────────────── */}
+      <section className="section bg-steel-900 relative overflow-hidden">
+        <div className="absolute inset-0 glow-red opacity-40" aria-hidden />
+        <div className="relative shell">
+          <div className="flex flex-wrap items-end justify-between gap-6 mb-10">
+            <div className="max-w-xl">
+              <Reveal><p className="kicker has-icon mb-5"><Icon name="download" className="w-4 h-4" /> Resources</p></Reveal>
+              <Reveal delay={0.05}>
+                <h2 className="display-2 text-steel-50">Downloads &amp; <span className="text-red">documents.</span></h2>
+              </Reveal>
+              <Reveal delay={0.1}>
+                <p className="lead mt-5">Everything you need to brief your team or start procurement — our profile, capability statement, service catalogue and reliability whitepaper.</p>
+              </Reveal>
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { icon: 'shield', title: 'Company Profile', meta: 'PDF · 1 page', desc: 'Who we are, what we deliver and why it matters.', file: '/downloads/ARS-Company-Profile.pdf' },
+              { icon: 'clipboardcheck', title: 'Capability Statement', meta: 'PDF · 1 page', desc: 'Core capabilities and how we deliver on site.', file: '/downloads/ARS-Capability-Statement.pdf' },
+              { icon: 'wrench', title: 'Service Catalogue', meta: 'PDF · 1 page', desc: 'Fifteen reliability disciplines at a glance.', file: '/downloads/ARS-Service-Catalogue.pdf' },
+              { icon: 'waveform', title: 'Reliability Whitepaper', meta: 'PDF · 1 page', desc: 'Why we say all failures are preventable.', file: '/downloads/ARS-Reliability-Whitepaper.pdf' },
+            ].map((d, i) => (
+              <Reveal key={d.title} delay={(i % 4) * 0.06} className="h-full">
+                <a href={d.file} download className="group panel lift ticked h-full p-6 flex flex-col">
+                  <div className="flex items-start justify-between">
+                    <span className="grid place-items-center w-12 h-12 rounded-md bg-red-500/12 text-red-400 group-hover:bg-red-500 group-hover:text-white transition-colors"><Icon name={d.icon} className="w-6 h-6" /></span>
+                    <span className="grid place-items-center w-9 h-9 rounded-full border border-steel-700 text-steel-400 group-hover:border-red-500 group-hover:text-red-400 group-hover:translate-y-0.5 transition-all"><Icon name="download" className="w-4 h-4" /></span>
+                  </div>
+                  <h3 className="font-display text-lg text-steel-50 mt-5 group-hover:text-red-400 transition-colors">{d.title}</h3>
+                  <p className="text-sm text-steel-400 mt-2 leading-relaxed flex-1">{d.desc}</p>
+                  <p className="mono-label text-steel-500 mt-4 pt-4 bd-t-bold">{d.meta}</p>
+                </a>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ─────────────── WHAT WE DO ─────────────── */}
       <section className="section bg-steel">
         <div className="shell">

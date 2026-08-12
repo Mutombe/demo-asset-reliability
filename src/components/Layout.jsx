@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import Icon from './Icon';
+import FloatingActions from './FloatingActions';
 import { nav, brand, services, wa } from '../data';
 import { useCart } from '../lib/cart';
 
@@ -206,6 +207,7 @@ export default function Layout() {
       <ScrollTop />
       <Nav />
       <main className="flex-1"><Outlet /></main>
+      <FloatingActions />
       <Footer />
     </div>
   );
