@@ -70,7 +70,7 @@ function Hero() {
     return () => clearInterval(t);
   }, []);
   const Kicker = <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="kicker has-icon mb-5" style={{ color: 'var(--color-red-400)' }}><Icon name="gauge" className="w-4 h-4" /> Condition monitoring · Precision maintenance · Harare</motion.p>;
-  const Heading = <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.08 }} className="display-1 text-balance max-w-4xl"><span className="grad-wr">All failures are preventable.</span></motion.h1>;
+  const Heading = <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.08 }} className="display-1 font-hero font-bold text-balance max-w-4xl"><span className="grad-wr">All failures are preventable.</span></motion.h1>;
 
   return (
     <section className="relative w-full overflow-hidden bg-navy-950">
@@ -82,7 +82,7 @@ function Hero() {
         <div className="relative flex-1 min-h-0 flex flex-col justify-end px-5 pt-24 pb-5">
           {Kicker}
           <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.08 }}
-            className="font-display font-extrabold text-balance leading-[0.96] tracking-[-0.03em] mt-1"
+            className="font-hero font-bold text-balance leading-[0.96] tracking-[-0.03em] mt-1"
             style={{ fontSize: 'clamp(2.35rem, 11vw, 3.4rem)' }}><span className="grad-wr">All failures are preventable.</span></motion.h1>
           <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2 }} className="text-white/75 mt-3.5 text-[0.94rem] leading-relaxed line-clamp-3">{brand.positioning}</motion.p>
           <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.32 }} className="grid grid-cols-2 gap-3 mt-6">

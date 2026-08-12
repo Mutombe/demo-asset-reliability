@@ -35,7 +35,7 @@ export default function PageHero({ kicker, title, sub, image, children, spec, ic
 
         <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.05 }} className={`kicker mb-7 ${icon ? 'has-icon' : ''}`} style={{ color: 'var(--color-red-400)' }}>{icon && <Icon name={icon} className="w-4 h-4" />}{kicker}</motion.p>
         <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.75, delay: 0.12 }}
-          className="display-1 text-white max-w-4xl" style={{ fontSize: 'clamp(2.5rem,5.4vw,4.8rem)' }} dangerouslySetInnerHTML={{ __html: title }} />
+          className="display-1 font-hero font-bold text-white max-w-4xl" style={{ fontSize: 'clamp(2.5rem,5.4vw,4.8rem)' }} dangerouslySetInnerHTML={{ __html: title }} />
         {sub && <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.22 }} className="lead !text-white/80 mt-7 max-w-2xl">{sub}</motion.p>}
         {children}
 

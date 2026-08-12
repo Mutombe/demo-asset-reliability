@@ -22,6 +22,12 @@
 @font-face { font-family:'Gravita'; src:url('/fonts/Gravita-Bold.woff2') format('woff2'); font-weight:700; font-style:normal; font-display:swap; }
 @font-face { font-family:'Gravita'; src:url('/fonts/Gravita-ExtraBold.woff2') format('woff2'); font-weight:800; font-style:normal; font-display:swap; }
 
+/* ---- CLASH DISPLAY (hero / big statements) ---- */
+@font-face { font-family:'Clash Display'; src:url('/fonts/ClashDisplay-400.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:swap; }
+@font-face { font-family:'Clash Display'; src:url('/fonts/ClashDisplay-500.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:swap; }
+@font-face { font-family:'Clash Display'; src:url('/fonts/ClashDisplay-600.woff2') format('woff2'); font-weight:600; font-style:normal; font-display:swap; }
+@font-face { font-family:'Clash Display'; src:url('/fonts/ClashDisplay-700.woff2') format('woff2'); font-weight:700; font-style:normal; font-display:swap; }
+
 @theme {
   /* light neutrals — low numbers = near-black ink, high = light bg */
   --color-steel-950:#ffffff; --color-steel-900:#f6f6f8; --color-steel-850:#ffffff; --color-steel-800:#eeeef1;
@@ -39,6 +45,7 @@
   --color-ink:#111114; --color-line:#eaeaee; --color-line-2:#dcdce2; --color-paper:#ffffff; --color-mist:#f6f6f8;
 
   --font-display:'Grift', system-ui, sans-serif;
+  --font-hero:'Clash Display', 'Grift', system-ui, sans-serif;
   --font-body:'Gravita', system-ui, sans-serif;
   /* only two fonts on the site — mono role now uses Gravita too */
   --font-mono:'Gravita', system-ui, sans-serif;
@@ -179,6 +186,7 @@ body { margin:0; font-family:var(--font-body); font-weight:400; color:var(--colo
   .grad-navy { background:linear-gradient(155deg, #000, var(--color-navy-900)); }
   .grad-red { background:linear-gradient(120deg, var(--color-red-600), var(--color-red-500)); }
   .grad-blue { background:linear-gradient(150deg, var(--color-red-600) 0%, var(--color-red-500) 100%); }
+  .font-hero { font-family:var(--font-hero); }
   .grid-tech { background-image:linear-gradient(rgba(17,17,20,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,20,.045) 1px, transparent 1px); background-size:52px 52px; }
   .grid-tech-d { background-image:linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px); background-size:52px 52px; }
   .grid-fine { background-image:linear-gradient(rgba(17,17,20,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,20,.04) 1px, transparent 1px); background-size:16px 16px; }
