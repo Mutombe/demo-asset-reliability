@@ -96,23 +96,28 @@ function ProjectDetail({ p, code, pin, onBack }) {
       {(p.tasks || []).length > 0 && (
         <div className="mt-8">
           <h3 className="kicker has-icon mb-4"><Icon name="clipboardcheck" className="w-4 h-4" /> Work orders</h3>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {p.tasks.map((t) => {
-              const c = TASK_HEX[t.status] || '#6b7280';
-              return (
-                <div key={t.id} className="panel p-4 flex items-start gap-3">
-                  <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: c }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-steel-100 leading-snug">{t.title}</p>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span className="mono-label" style={{ color: c }}>{t.status}</span>
-                      {t.assignee && <span className="mono-label text-steel-500">· {t.assignee}</span>}
-                      {t.due && <span className="mono-label text-steel-500">· due {t.due}</span>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="panel overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr><th>Task</th><th>Status</th><th className="hidden sm:table-cell">Assignee</th><th className="text-right">Due</th></tr>
+              </thead>
+              <tbody>
+                {p.tasks.map((t, i) => {
+                  const c = TASK_HEX[t.status] || '#6b7280';
+                  return (
+                    <tr key={t.id} className="row-progressive" style={{ '--row-index': i }}>
+                      <td>
+                        <div className="flex items-center gap-2.5"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} /><span className="text-steel-100">{t.title}</span></div>
+                        {t.assignee && <span className="text-steel-500 sm:hidden block mt-0.5 pl-[18px]" style={{ fontSize: '11px' }}>{t.assignee}</span>}
+                      </td>
+                      <td><span className="font-semibold whitespace-nowrap" style={{ color: c, fontSize: '12px' }}>{t.status}</span></td>
+                      <td className="hidden sm:table-cell text-steel-400">{t.assignee || '—'}</td>
+                      <td className="text-right text-steel-400 tabnum whitespace-nowrap" style={{ fontSize: '12px' }}>{t.due || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -121,14 +126,27 @@ function ProjectDetail({ p, code, pin, onBack }) {
       {(p.documents || []).length > 0 && (
         <div className="mt-8">
           <h3 className="kicker has-icon mb-4"><Icon name="file" className="w-4 h-4" /> Documents</h3>
-          <div className="space-y-2">
-            {p.documents.map((d) => (
-              <div key={d.id} className="panel p-3.5 flex items-center gap-3">
-                <span className="grid place-items-center w-10 h-10 rounded bg-steel-800 text-red-500 shrink-0"><Icon name="file" className="w-5 h-5" /></span>
-                <div className="flex-1 min-w-0"><p className="text-sm text-steel-100 truncate">{d.name}</p><p className="mono-label text-steel-500">{d.kind} · {d.date}</p></div>
-                {d.url ? <a href={d.url} target="_blank" rel="noreferrer" className="btn btn-ghost !py-2 !px-3 text-[0.78rem]"><Icon name="download" className="w-4 h-4" /> Open</a> : <span className="mono-label text-steel-500">On file</span>}
-              </div>
-            ))}
+          <div className="panel overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr><th>Document</th><th className="hidden sm:table-cell">Type</th><th className="hidden sm:table-cell">Date</th><th className="text-right">Action</th></tr>
+              </thead>
+              <tbody>
+                {p.documents.map((d, i) => (
+                  <tr key={d.id} className="row-progressive" style={{ '--row-index': i }}>
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid place-items-center w-8 h-8 rounded bg-steel-800 text-red-500 shrink-0"><Icon name="file" className="w-4 h-4" /></span>
+                        <div className="min-w-0"><p className="text-steel-100 truncate">{d.name}</p><p className="text-steel-500 sm:hidden" style={{ fontSize: '11px' }}>{d.kind} · {d.date}</p></div>
+                      </div>
+                    </td>
+                    <td className="hidden sm:table-cell text-steel-400">{d.kind}</td>
+                    <td className="hidden sm:table-cell text-steel-400 tabnum whitespace-nowrap">{d.date}</td>
+                    <td className="text-right">{d.url ? <a href={d.url} target="_blank" rel="noreferrer" className="btn btn-ghost !py-1.5 !px-3 text-[0.75rem]"><Icon name="download" className="w-4 h-4" /> Open</a> : <span className="text-steel-500 whitespace-nowrap" style={{ fontSize: '11px' }}>On file</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -164,15 +182,15 @@ function ClientPortal({ data, code, pin, onExit }) {
   const selected = projects.find((p) => p.id === sel);
 
   return (
-    <section className="pt-8 md:pt-10 pb-16 bg-steel min-h-screen relative">
+    <section className="erp pt-8 md:pt-10 pb-16 bg-steel min-h-screen relative">
       <div className="absolute inset-x-0 top-0 h-72 grad-steel -z-0" aria-hidden />
       <div className="relative shell">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
           <div className="flex items-center gap-4">
-            <span className="grid place-items-center w-12 h-12 rounded-md grad-red text-white font-display text-lg">{data.client.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}</span>
+            <span className="grid place-items-center w-12 h-12 rounded-md grad-red text-white text-lg font-semibold">{data.client.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}</span>
             <div>
               <p className="mono-label text-red-400">Client portal</p>
-              <h1 className="font-display text-2xl text-white leading-none mt-0.5">{data.client.name}</h1>
+              <h1 className="text-2xl text-white leading-none mt-0.5">{data.client.name}</h1>
               <p className="text-sm text-white/70 mt-1">{projects.length} project{projects.length !== 1 ? 's' : ''} with Asset Reliability Services</p>
             </div>
           </div>
@@ -200,28 +218,49 @@ function ClientPortal({ data, code, pin, onExit }) {
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h2 className="font-display text-lg text-steel-50">Your projects</h2>
+              <h2 className="text-lg text-steel-50 font-semibold">Your projects</h2>
               <div className="flex gap-2">
                 {[['all', 'All'], ['active', 'In progress'], ['completed', 'Completed']].map(([v, l]) => (
-                  <button key={v} onClick={() => setFilter(v)} className={`px-3 py-1.5 rounded-md font-mono text-[0.72rem] uppercase border transition-colors ${filter === v ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700 hover:border-steel-500'}`}>{l}</button>
+                  <button key={v} onClick={() => setFilter(v)} className={`px-3 py-1.5 rounded-md text-[0.72rem] font-semibold uppercase tracking-wide border transition-colors ${filter === v ? 'bg-red-500 text-white border-red-500' : 'bg-steel-850 text-steel-300 border-steel-700 hover:border-steel-500'}`}>{l}</button>
                 ))}
               </div>
             </div>
-            <div className="grid md:grid-cols-2 gap-4">
-              {shownProjects.map((p) => (
-                <button key={p.id} onClick={() => setSel(p.id)} className="panel lift ticked p-5 text-left group">
-                  <div className="flex items-center justify-between mb-3"><StatusBadge s={p.status} /><span className="mono-label text-steel-500">{p.type}</span></div>
-                  <h3 className="font-display text-lg text-steel-50 group-hover:text-red-400 transition-colors">{p.title}</h3>
-                  {p.location && <p className="text-sm text-steel-400 mt-1 inline-flex items-center gap-1.5"><Icon name="pin" className="w-3.5 h-3.5" /> {p.location}</p>}
-                  <div className="flex items-center justify-between mt-4 mb-2"><span className="mono-label text-steel-500">{p.progress}% complete</span><span className="font-mono text-sm text-steel-100 tabnum">{money(p.budget)}</span></div>
-                  <Progress v={p.progress} color={STATUS_HEX[p.status]} />
-                  <div className="flex items-center justify-between mt-4 text-steel-500">
-                    <span className="mono-label">{p.start_date} → {p.due_date}</span>
-                    <span className="inline-flex items-center gap-1 text-red-400 font-display text-sm">Open <Icon name="arrowRight" className="w-4 h-4" /></span>
-                  </div>
-                </button>
-              ))}
-              {!shownProjects.length && <p className="mono-label text-steel-500 md:col-span-2 py-10 text-center">No {filter === 'completed' ? 'completed' : filter === 'active' ? 'in-progress' : ''} projects.</p>}
+            <div className="panel overflow-x-auto">
+              <table className="erp-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th className="hidden md:table-cell">Location</th>
+                    <th>Progress</th>
+                    <th className="text-right">Contract value</th>
+                    <th className="hidden lg:table-cell">Schedule</th>
+                    <th>Status</th>
+                    <th className="w-8" aria-label="Open" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {shownProjects.map((p, i) => (
+                    <tr key={p.id} className="clickable row-progressive" style={{ '--row-index': i }} onClick={() => setSel(p.id)}>
+                      <td>
+                        <p className="font-semibold text-steel-50 leading-snug">{p.title}</p>
+                        <p className="text-steel-500 mt-0.5" style={{ fontSize: '11px' }}>{p.type}<span className="md:hidden"> · {p.location}</span></p>
+                      </td>
+                      <td className="hidden md:table-cell text-steel-400">{p.location || '—'}</td>
+                      <td>
+                        <div className="flex items-center gap-2 min-w-[6.5rem]">
+                          <div className="flex-1 h-1.5 rounded-full bg-steel-800 overflow-hidden max-w-[6rem]"><div className="h-full rounded-full" style={{ width: `${p.progress}%`, background: STATUS_HEX[p.status] }} /></div>
+                          <span className="tabnum text-steel-300" style={{ fontSize: '12px' }}>{p.progress}%</span>
+                        </div>
+                      </td>
+                      <td className="text-right tabnum font-semibold text-steel-100 whitespace-nowrap">{money(p.budget)}</td>
+                      <td className="hidden lg:table-cell text-steel-400 tabnum whitespace-nowrap" style={{ fontSize: '12px' }}>{p.start_date} → {p.due_date}</td>
+                      <td><StatusBadge s={p.status} /></td>
+                      <td className="text-right"><Icon name="arrowRight" className="w-4 h-4 text-steel-400 row-open transition-opacity" style={{ opacity: 0.45 }} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!shownProjects.length && <p className="mono-label text-steel-500 py-10 text-center">No {filter === 'completed' ? 'completed' : filter === 'active' ? 'in-progress' : ''} projects.</p>}
             </div>
           </>
         )}

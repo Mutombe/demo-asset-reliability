@@ -246,4 +246,43 @@ body { margin:0; font-family:var(--font-body); font-weight:400; color:var(--colo
 .erp .text-\[0\.62rem\] { font-size:9px; }
 .erp .text-\[10px\] { font-size:9px; }
 .erp .text-\[11px\] { font-size:10px; }
-@media (prefers-reduced-motion: reduce) { *{animation-duration:.001ms!important;transition-duration:.001ms!important} html{scroll-behavior:auto} }
+
+/* ══ ERP look & feel (admin console + client portal) ══
+   Clean native system UI font — NO marketing display face (Grift/Clash) in the
+   operational screens. Matches the demo-construction-engine reference (Segoe UI, 14px). */
+.erp,
+.erp button, .erp input, .erp textarea, .erp select, .erp table,
+.erp h1, .erp h2, .erp h3, .erp h4, .erp h5, .erp h6,
+.erp .font-display, .erp .display-1, .erp .display-2, .erp .display-3, .erp .stat-num,
+.erp .btn, .erp .kicker, .erp .mono-label, .erp .overline, .erp .field-label,
+.erp .chip, .erp .input, .erp .font-mono {
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "cv01", "ss01";
+}
+/* ERP headings: quieter than the marketing display type — semibold, no tight tracking */
+.erp h1, .erp h2, .erp h3, .erp h4, .erp h5, .erp h6,
+.erp .font-display, .erp .display-3, .erp .stat-num { font-weight:600; letter-spacing:-0.005em; }
+.erp .stat-num { font-weight:650; }
+/* tabular numerals everywhere numbers matter, so columns align like a ledger */
+.erp .tabnum, .erp .stat-num, .erp table { font-variant-numeric: tabular-nums; }
+
+/* ── Reference ERP table primitives (dense, quiet, horizontal rules only) ── */
+.erp-table { width:100%; border-collapse:collapse; font-size:14px; }
+.erp-table thead th { height:34px; padding:0 12px; text-align:left; vertical-align:middle;
+  font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--color-steel-400); border-bottom:1px solid var(--color-line); white-space:nowrap; background:var(--color-mist); }
+.erp-table tbody td { padding:9px 12px; vertical-align:middle; border-bottom:1px solid var(--color-line); color:var(--color-steel-200); }
+.erp-table tbody tr { transition:background-color .12s ease; }
+.erp-table tbody tr:last-child td { border-bottom:0; }
+.erp-table tbody tr.clickable { cursor:pointer; }
+.erp-table tbody tr.clickable:hover { background:var(--color-mist); }
+.erp-table tbody tr:hover .row-open { opacity:1; }
+
+/* ── Optimistic-UI row states (operational speed cues) ── */
+@keyframes erp-shimmer-sweep { from { background-position:-200% 0 } to { background-position:200% 0 } }
+.row-creating { opacity:.7; background-image:linear-gradient(100deg, transparent 30%, rgba(226,33,28,.08) 50%, transparent 70%); background-size:200% 100%; animation:erp-shimmer-sweep 1.5s linear infinite; }
+.row-saving { opacity:.55; pointer-events:none; }
+@keyframes erp-row-in { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:translateY(0) } }
+.row-progressive { animation:erp-row-in 220ms ease-out both; animation-delay:calc(var(--row-index,0) * 26ms); }
+
+@media (prefers-reduced-motion: reduce) { *{animation-duration:.001ms!important;transition-duration:.001ms!important} html{scroll-behavior:auto} .row-creating,.row-progressive{animation:none} }
